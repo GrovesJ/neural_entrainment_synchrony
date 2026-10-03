@@ -1,1 +1,4 @@
 auditory-entrainment/results/
+auditory-entrainment/figures
+__pycache__/
+*.py[cod]
