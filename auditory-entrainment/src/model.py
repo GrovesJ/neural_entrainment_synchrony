@@ -53,6 +53,8 @@ class Params:
         tau_i: float = 10.0, # Inhibitory Conductance Decay
         delay_ei: float = 1.0, # E-to-I
         delay_ie: float = 1.0, # I-to-E
+        delay_ei_std: float = 0.0, # E-to-I across-neuron delay spread (ms)
+        delay_ie_std: float = 0.0, # I-to-E across-neuron delay spread (ms)
 
         # Recurrent weights
         w_ee: float = 1.5, # Recurrent E-E Conductance Increment
@@ -61,7 +63,7 @@ class Params:
         w_ii: float = 4.0, # I-I weight
         
         # Connection Probabilities
-        p_ee: float = 0.1, # E-E connection
+        p_ee: float = 0.02, # E-E connection
         p_ei: float = 0.4, # E-I connectioon
         p_ie: float = 0.5, # I-E connection
         p_ii: float = 0.5, # I-I connection
@@ -72,7 +74,7 @@ class Params:
         delta_adapt: float = 0.1, # incremept to adaptation per spike
         
         # Rhythmic Thalamic Input
-        n_thal: int = 100, # Number of Thalamic Input Channels
+        n_thal: int = 20, # Number of Thalamic Input Channels
         w_thal: float = 0.05, # Synaptic weight from Thalamus to Excitatory Neurons
         p_thal: float = 0.5, # Connection Probability
 
@@ -82,6 +84,7 @@ class Params:
         # Tonic Drive
         I_bias: float = 100.0, # Mean tonic depolarizing current (pA)
         I_bias_std: float = 0.0, # Across-neuron standard deviation (pA)
+        weight_lognormal_sigma: float = 0.0, # Shared per-neuron synaptic weight spread
     ):
 
         # Simulation Parameters
@@ -111,6 +114,12 @@ class Params:
         self.tau_i = tau_i
         self.delay_ei = delay_ei
         self.delay_ie = delay_ie
+        if delay_ei < 0 or delay_ie < 0:
+            raise ValueError("Mean synaptic delays must be non-negative.")
+        if delay_ei_std < 0 or delay_ie_std < 0:
+            raise ValueError("Synaptic delay spreads must be non-negative.")
+        self.delay_ei_std = delay_ei_std
+        self.delay_ie_std = delay_ie_std
         
         # Recurrent Weights
         self.w_ee = w_ee
@@ -142,6 +151,9 @@ class Params:
         if I_bias_std < 0:
             raise ValueError("I_bias_std must be non-negative.")
         self.I_bias_std = I_bias_std
+        if weight_lognormal_sigma < 0:
+            raise ValueError("weight_lognormal_sigma must be non-negative.")
+        self.weight_lognormal_sigma = weight_lognormal_sigma
 
     def __repr__(self) -> str:
         parts = ", ".join(f"{name}={getattr(self, name)!r}" for name in _PARAM_FIELDS)
@@ -154,13 +166,13 @@ _PARAM_FIELDS = (
     "C_m", "tau_exc", "tau_inh",
     "E_l", "E_e", "E_i", "v_thresh", "v_reset",
     "tau_ref_exc", "tau_ref_inh",
-    "tau_e", "tau_i", "delay_ei", "delay_ie",
+    "tau_e", "tau_i", "delay_ei", "delay_ie", "delay_ei_std", "delay_ie_std",
     "w_ee", "w_ei", "w_ie", "w_ii",
     "p_ee", "p_ei", "p_ie", "p_ii",
     "tau_adapt", "w_adapt", "delta_adapt",
     "n_thal", "w_thal", "p_thal",
     "bg_noise",
-    "I_bias", "I_bias_std",
+    "I_bias", "I_bias_std", "weight_lognormal_sigma",
 )
 
 
@@ -249,6 +261,7 @@ def _build_network(
     noise_e = sigma_noise * (2 / (params.tau_exc * ms)) ** 0.5
     noise_i = sigma_noise * (2 / (params.tau_inh * ms)) ** 0.5
     bias_rng = _np.random.default_rng(params.seed)
+    weight_rng = _np.random.default_rng(params.seed + 1)
     exc_bias = _np.clip(
         bias_rng.normal(params.I_bias, params.I_bias_std, params.n_exc),
         0.0,
@@ -326,59 +339,79 @@ def _build_network(
 
     thal = None
     if stimulus is not None:
-        thal = stimulus.spike_generator_group(params.duration / 1000.0, n_neurons=params.n_thal)
+        thal = stimulus.spike_generator_group(
+            params.duration / 1000.0, n_neurons=params.n_thal, seed=params.seed
+        )
     thal_bg = None
     if background is not None:
-        thal_bg = background.spike_generator_group(params.duration / 1000.0, n_neurons=params.n_thal)
+        thal_bg = background.spike_generator_group(
+            params.duration / 1000.0, n_neurons=params.n_thal, seed=params.seed + 1
+        )
 
     s_ee = _b2.Synapses(
         exc, exc,
         on_pre="g_e_post += w",
-        namespace={"w": params.w_ee * nS},
+        model="w : siemens (constant)",
         name="s_ee",
     )
     s_ee.connect(condition="i != j", p=params.p_ee)
+    _assign_presynaptic_weights(s_ee, params.w_ee * nS, params.n_exc, params.weight_lognormal_sigma, weight_rng)
     s_ei = _b2.Synapses(
         exc, inh,
         on_pre="g_e_post += w",
-        namespace={"w": params.w_ei * nS},
-        delay=params.delay_ei * ms,
+        model="w : siemens (constant)",
         name="s_ei",
     )
     s_ei.connect(p=params.p_ei)
+    _assign_presynaptic_weights(s_ei, params.w_ei * nS, params.n_exc, params.weight_lognormal_sigma, weight_rng)
+    ei_delays = _np.clip(
+        bias_rng.normal(params.delay_ei, params.delay_ei_std, params.n_exc),
+        0.0,
+        None,
+    )
+    s_ei.delay = ei_delays[_np.asarray(s_ei.i[:], dtype=int)] * ms
     s_ie = _b2.Synapses(
         inh, exc,
         on_pre="g_i_post += w",
-        namespace={"w": params.w_ie * nS},
-        delay=params.delay_ie * ms,
+        model="w : siemens (constant)",
         name="s_ie",
     )
     s_ie.connect(p=params.p_ie)
+    _assign_presynaptic_weights(s_ie, params.w_ie * nS, params.n_inh, params.weight_lognormal_sigma, weight_rng)
+    ie_delays = _np.clip(
+        bias_rng.normal(params.delay_ie, params.delay_ie_std, params.n_inh),
+        0.0,
+        None,
+    )
+    s_ie.delay = ie_delays[_np.asarray(s_ie.i[:], dtype=int)] * ms
     s_ii = _b2.Synapses(
         inh, inh,
         on_pre="g_i_post += w",
-        namespace={"w": params.w_ii * nS},
+        model="w : siemens (constant)",
         name="s_ii",
     )
     s_ii.connect(condition="i != j", p=params.p_ii)
+    _assign_presynaptic_weights(s_ii, params.w_ii * nS, params.n_inh, params.weight_lognormal_sigma, weight_rng)
     s_thal = None
     if thal is not None:
         s_thal = _b2.Synapses(
             thal, exc,
             on_pre="g_e_post += w",
-            namespace={"w": params.w_thal * nS},
+            model="w : siemens (constant)",
             name="s_thal",
         )
         s_thal.connect(p=params.p_thal)
+        _assign_presynaptic_weights(s_thal, params.w_thal * nS, params.n_thal, params.weight_lognormal_sigma, weight_rng)
     s_thal_bg = None
     if thal_bg is not None:
         s_thal_bg = _b2.Synapses(
             thal_bg, exc,
             on_pre="g_e_post += w",
-            namespace={"w": params.w_thal * nS},
+            model="w : siemens (constant)",
             name="s_thal_bg",
         )
         s_thal_bg.connect(p=params.p_thal)
+        _assign_presynaptic_weights(s_thal_bg, params.w_thal * nS, params.n_thal, params.weight_lognormal_sigma, weight_rng)
 
     return {
         "exc": exc,
@@ -392,6 +425,13 @@ def _build_network(
         "s_thal": s_thal,
         "s_thal_bg": s_thal_bg,
     }
+
+
+def _assign_presynaptic_weights(synapses, base_weight, n_pre, sigma, rng):
+    """Assign mean-preserving lognormal weights shared by each source neuron."""
+    factors = _np.exp(sigma * rng.standard_normal(n_pre) - 0.5 * sigma**2)
+    source_indices = _np.asarray(synapses.i[:], dtype=int)
+    synapses.w = base_weight * factors[source_indices]
 
 
 def _collect_result(params, stimulus, exc_spikes, inh_spikes, exc_rate, inh_rate, exc_v, inh_v) -> Result:
