@@ -51,6 +51,8 @@ class Params:
         # Synaptic Time Constants
         tau_e: float = 5.0, # Excitatory Conductance Decay
         tau_i: float = 10.0, # Inhibitory Conductance Decay
+        delay_ei: float = 1.0, # E-to-I
+        delay_ie: float = 1.0, # I-to-E
 
         # Recurrent weights
         w_ee: float = 1.5, # Recurrent E-E Conductance Increment
@@ -78,7 +80,8 @@ class Params:
         bg_noise: float = 0.0, # Std (mV) of Gaussian white-noise voltage injection; 0 = off
 
         # Tonic Drive
-        I_bias: float = 100.0, # Tonic Depolizaring Current To All Neurons
+        I_bias: float = 100.0, # Mean tonic depolarizing current (pA)
+        I_bias_std: float = 0.0, # Across-neuron standard deviation (pA)
     ):
 
         # Simulation Parameters
@@ -106,6 +109,8 @@ class Params:
         self.tau_ref_inh = tau_ref_inh
         self.tau_e = tau_e
         self.tau_i = tau_i
+        self.delay_ei = delay_ei
+        self.delay_ie = delay_ie
         
         # Recurrent Weights
         self.w_ee = w_ee
@@ -134,6 +139,9 @@ class Params:
 
         # Tonic Drive
         self.I_bias = I_bias
+        if I_bias_std < 0:
+            raise ValueError("I_bias_std must be non-negative.")
+        self.I_bias_std = I_bias_std
 
     def __repr__(self) -> str:
         parts = ", ".join(f"{name}={getattr(self, name)!r}" for name in _PARAM_FIELDS)
@@ -146,13 +154,13 @@ _PARAM_FIELDS = (
     "C_m", "tau_exc", "tau_inh",
     "E_l", "E_e", "E_i", "v_thresh", "v_reset",
     "tau_ref_exc", "tau_ref_inh",
-    "tau_e", "tau_i",
+    "tau_e", "tau_i", "delay_ei", "delay_ie",
     "w_ee", "w_ei", "w_ie", "w_ii",
     "p_ee", "p_ei", "p_ie", "p_ii",
     "tau_adapt", "w_adapt", "delta_adapt",
     "n_thal", "w_thal", "p_thal",
     "bg_noise",
-    "I_bias",
+    "I_bias", "I_bias_std",
 )
 
 
@@ -240,18 +248,30 @@ def _build_network(
     sigma_noise = params.bg_noise * mV
     noise_e = sigma_noise * (2 / (params.tau_exc * ms)) ** 0.5
     noise_i = sigma_noise * (2 / (params.tau_inh * ms)) ** 0.5
-    I_bias = params.I_bias * pA
+    bias_rng = _np.random.default_rng(params.seed)
+    exc_bias = _np.clip(
+        bias_rng.normal(params.I_bias, params.I_bias_std, params.n_exc),
+        0.0,
+        None,
+    ) * pA
+    inh_bias = _np.clip(
+        bias_rng.normal(params.I_bias, params.I_bias_std, params.n_inh),
+        0.0,
+        None,
+    ) * pA
 
     exc_eqs = _b2.Equations(
         "dv/dt = (g_leak*(E_leak - v) + g_e*(E_e - v) + g_i*(E_i - v) - w_adapt*a + I_bias) / C_m + noise_e * xi : volt (unless refractory)\n"
         "da/dt = -a / tau_adapt : 1\n"
         "dg_e/dt = -g_e / tau_e : siemens\n"
         "dg_i/dt = -g_i / tau_i : siemens\n"
+        "I_bias : amp\n"
     )
     inh_eqs = _b2.Equations(
         "dv/dt = (g_leak*(E_leak - v) + g_e*(E_e - v) + g_i*(E_i - v) + I_bias) / C_m + noise_i * xi : volt (unless refractory)\n"
         "dg_e/dt = -g_e / tau_e : siemens\n"
         "dg_i/dt = -g_i / tau_i : siemens\n"
+        "I_bias : amp\n"
     )
 
     common = {
@@ -272,13 +292,11 @@ def _build_network(
         "tau_adapt": tau_adapt,
         "delta_adapt": params.delta_adapt,
         "noise_e": noise_e,
-        "I_bias" : I_bias,
     }
 
     inh_ns = {**common,
                "g_leak": g_leak_inh,
                  "noise_i": noise_i,
-                 "I_bias": I_bias
     }
 
     exc = _b2.NeuronGroup(
@@ -303,6 +321,8 @@ def _build_network(
     )
     exc.v = E_l
     inh.v = E_l
+    exc.I_bias = exc_bias
+    inh.I_bias = inh_bias
 
     thal = None
     if stimulus is not None:
@@ -322,6 +342,7 @@ def _build_network(
         exc, inh,
         on_pre="g_e_post += w",
         namespace={"w": params.w_ei * nS},
+        delay=params.delay_ei * ms,
         name="s_ei",
     )
     s_ei.connect(p=params.p_ei)
@@ -329,6 +350,7 @@ def _build_network(
         inh, exc,
         on_pre="g_i_post += w",
         namespace={"w": params.w_ie * nS},
+        delay=params.delay_ie * ms,
         name="s_ie",
     )
     s_ie.connect(p=params.p_ie)
@@ -392,4 +414,3 @@ def _collect_result(params, stimulus, exc_spikes, inh_spikes, exc_rate, inh_rate
         v_exc=_np.asarray(exc_v.v / _b2.mV),
         v_inh=_np.asarray(inh_v.v / _b2.mV),
     )
-
