@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import brian2 as b2
-import numpy as np
+import brian2 as b2 # type: ignore
+import numpy as np # type: ignore
 
 __all__ = [
     "PATTERNS",

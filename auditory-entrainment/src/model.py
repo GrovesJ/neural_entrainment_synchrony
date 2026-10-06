@@ -11,8 +11,8 @@ Excitatory/inhibitory LIF network with:
 
 from dataclasses import dataclass as _dataclass
 
-import brian2 as _b2
-import numpy as _np
+import brian2 as _b2 # type: ignore
+import numpy as _np # type: ignore
 
 from . import stimuli as _stimuli
 

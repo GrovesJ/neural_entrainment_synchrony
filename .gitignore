@@ -2,3 +2,4 @@ auditory-entrainment/results/
 auditory-entrainment/figures
 __pycache__/
 *.py[cod]
+auditory-entrainment/notebooks/parameter_sets.json
