@@ -114,6 +114,9 @@ class Rhythm:
         Mean firing rate in Hz of each input neuron during an onset step.
     rate_off : float
         Mean firing rate in Hz of each input neuron during a silent step.
+    jitter_ms : float
+        Standard deviation of an independent onset-time offset for each
+        neuron and active pattern step, in milliseconds.
     name : str
         Human-readable label.
     """
@@ -122,6 +125,7 @@ class Rhythm:
     step_duration: float = 0.25
     rate_on: float = 35.0
     rate_off: float = 0.0
+    jitter_ms: float = 0.0
     name: str = "rhythm"
 
     @property
@@ -144,21 +148,24 @@ class Rhythm:
         return pattern_rate(self.pattern, t, self.step_duration, self.rate_on, self.rate_off)
 
     def spike_trains(self, duration: float, n_neurons: int = 100):
-        """Deterministic spike times and neuron indices over ``duration`` seconds."""
+        """Spike times and neuron indices over ``duration`` seconds."""
         return spike_trains(self, duration, n_neurons=n_neurons)
 
-    def spike_generator_group(self, duration: float, n_neurons: int = 100):
+    def spike_generator_group(self, duration: float, n_neurons: int = 100, seed=0):
         """Brian2 SpikeGeneratorGroup firing according to this rhythm."""
-        return spike_generator_group(self, duration, n_neurons=n_neurons)
+        return spike_generator_group(self, duration, n_neurons=n_neurons, seed=seed)
 
 
-def make_rhythm(pattern_id, step_duration=0.25, rate_on=40.0, rate_off=0.0) -> Rhythm:
+def make_rhythm(
+    pattern_id, step_duration=0.25, rate_on=40.0, rate_off=0.0, jitter_ms=0.0
+) -> Rhythm:
     """Build a Rhythm from a ``PATTERNS`` key."""
     return Rhythm(
         tuple(PATTERNS[pattern_id]),
         step_duration=step_duration,
         rate_on=rate_on,
         rate_off=rate_off,
+        jitter_ms=jitter_ms,
         name=PATTERN_NAMES[pattern_id],
     )
 
@@ -182,12 +189,13 @@ def pattern_rate(pattern, t, step_duration=0.25, rate_on=40.0, rate_off=0.0):
     return np.where(pattern[step_idx] == 1, rate_on, rate_off)
 
 
-def spike_trains(rhythm, duration, n_neurons=100):
-    """Deterministic spike trains for ``n_neurons`` input neurons.
+def spike_trains(rhythm, duration, n_neurons=100, seed=0):
+    """Generate spike trains for ``n_neurons`` input neurons.
 
     Every neuron emits a regular spike train at ``rate_on`` Hz during
-    onset steps and ``rate_off`` Hz during silent steps, so the beat
-    pattern is identical across neurons.
+    onset steps and ``rate_off`` Hz during silent steps. If ``jitter_ms``
+    is nonzero, each neuron receives an independent onset-time offset for
+    each active step.
 
     Returns
     -------
@@ -196,24 +204,35 @@ def spike_trains(rhythm, duration, n_neurons=100):
     indices : ndarray of int
         Neuron index of each spike in ``times``.
     """
-    times = _pattern_times(
-        np.asarray(rhythm.pattern, dtype=np.int64),
-        rhythm.step_duration,
-        duration,
-        rhythm.rate_on,
-        rhythm.rate_off,
-    )
-    indices = np.repeat(np.arange(n_neurons, dtype=np.int32), times.size)
-    return np.tile(times, n_neurons), indices
+    if rhythm.jitter_ms < 0:
+        raise ValueError("jitter_ms must be non-negative.")
+    rng = np.random.default_rng(seed)
+    all_times = []
+    all_indices = []
+    for neuron_idx in range(n_neurons):
+        times = _pattern_times(
+            np.asarray(rhythm.pattern, dtype=np.int64),
+            rhythm.step_duration,
+            duration,
+            rhythm.rate_on,
+            rhythm.rate_off,
+            jitter=rhythm.jitter_ms / 1000.0,
+            rng=rng,
+        )
+        all_times.append(times)
+        all_indices.append(np.full(times.size, neuron_idx, dtype=np.int32))
+    if not all_times:
+        return np.empty(0), np.empty(0, dtype=np.int32)
+    return np.concatenate(all_times), np.concatenate(all_indices)
 
 
-def spike_generator_group(rhythm, duration, n_neurons=100):
+def spike_generator_group(rhythm, duration, n_neurons=100, seed=0):
     """Brian2 SpikeGeneratorGroup firing according to ``rhythm``."""
-    times, indices = spike_trains(rhythm, duration, n_neurons=n_neurons)
+    times, indices = spike_trains(rhythm, duration, n_neurons=n_neurons, seed=seed)
     return b2.SpikeGeneratorGroup(n_neurons, indices, times * b2.second)
 
 
-def _pattern_times(pattern, step_duration, duration, rate_on, rate_off):
+def _pattern_times(pattern, step_duration, duration, rate_on, rate_off, jitter=0.0, rng=None):
     """Regularly spaced spike times following a step-wise constant rate."""
     events = []
     step_idx = 0
@@ -222,7 +241,9 @@ def _pattern_times(pattern, step_duration, duration, rate_on, rate_off):
         rate = rate_on if pattern[step_idx % len(pattern)] else rate_off
         t_end = min(t_start + step_duration, duration)
         if rate > 0.0:
-            events.append(np.arange(t_start, t_end, 1.0 / rate))
+            offset = rng.normal(0.0, jitter) if rng is not None else 0.0
+            times = np.arange(t_start + offset, t_end + offset, 1.0 / rate)
+            events.append(times[(times >= 0.0) & (times < duration)])
         t_start = t_end
         step_idx += 1
     if events:
@@ -235,4 +256,3 @@ SILENCE = Rhythm((0,) * 8, rate_on=0.0, rate_off=0.0, name="silence")
 NO_INPUT = SILENCE
 RHYTHMIC = make_rhythm(2)
 SYNCOPATED = {pid: make_rhythm(pid) for pid in (4, 5, 6, 7, 8, 9, 10)}
-
