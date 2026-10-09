@@ -155,8 +155,18 @@ class Params:
             raise ValueError("weight_lognormal_sigma must be non-negative.")
         self.weight_lognormal_sigma = weight_lognormal_sigma
 
+    def as_dict(self) -> dict:
+        """Return every parameter value keyed by name, in declared order."""
+        return {name: getattr(self, name) for name in _PARAM_FIELDS}
+
+    def describe(self) -> str:
+        """Human-readable listing of every parameter, one per line."""
+        lines = ["Simulation parameters:"]
+        lines.extend(f"  {name}: {value}" for name, value in self.as_dict().items())
+        return "\n".join(lines)
+
     def __repr__(self) -> str:
-        parts = ", ".join(f"{name}={getattr(self, name)!r}" for name in _PARAM_FIELDS)
+        parts = ", ".join(f"{name}={value!r}" for name, value in self.as_dict().items())
         return f"Params({parts})"
 
 
@@ -205,11 +215,12 @@ def simulate(
     describing the rhythmic (accent) drive; ``None`` means no rhythmic
     input. ``background`` is an optional steady metrical beat presented
     on a separate input channel, so syncopated accents are heard against
-    a steady beat.
+    a steady beat. The returned :class:`Result` carries ``params``, whose
+    ``describe()`` method renders the full parameter set for reporting.
     """
     if params is None:
         params = Params()
-   
+
 
     _b2.seed(params.seed)
     _b2.defaultclock.dt = params.dt * _b2.ms
