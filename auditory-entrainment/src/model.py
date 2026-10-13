@@ -18,6 +18,41 @@ from . import stimuli as _stimuli
 
 __all__ = ["Params", "Result", "simulate"]
 
+# We normalize based on the reference network with 500 neurons and 20 thalamic channels
+_N_EXC_REF = 400
+_N_INH_REF = 100
+_N_THAL_REF = 20
+
+_NORMALIZATION_MODES = ("none", "sqrt", "linear")
+
+
+def _normalization_factors(
+    mode: str,
+    n_exc: int,
+    n_inh: int,
+    n_thal: int,
+    n_exc_ref: int,
+    n_inh_ref: int,
+    n_thal_ref: int,
+) -> dict:
+
+    if mode == "none":
+        return {"f_ee": 1.0, "f_ei": 1.0, "f_ie": 1.0, "f_ii": 1.0, "f_thal": 1.0}
+
+    def _size_factor(n: int, n_ref: int) -> float:
+        ratio = n_ref / n
+        if mode == "sqrt":
+            return float(_np.sqrt(ratio))
+        return float(ratio)
+
+    return {
+        "f_ee": _size_factor(n_exc, n_exc_ref),
+        "f_ei": _size_factor(n_exc, n_exc_ref),
+        "f_ie": _size_factor(n_inh, n_inh_ref),
+        "f_ii": _size_factor(n_inh, n_inh_ref),
+        "f_thal": _size_factor(n_thal, n_thal_ref),
+    }
+
 
 class Params:
     """Parameters of the auditory entrainment model. """
@@ -35,6 +70,11 @@ class Params:
         # Population Sizes
         n_exc: int = 400,
         n_inh: int = 100,
+
+        synaptic_normalization: str = "sqrt", # none/sqrt/linear
+        n_exc_ref: int = 400, # Reference sizes; normalization is identity here
+        n_inh_ref: int = 100,
+        n_thal_ref: int = 20,
 
         # Network Dynamics
         C_m: float = 200.0, # Membrane Capacitance
@@ -97,6 +137,12 @@ class Params:
         self.n_exc = n_exc
         self.n_inh = n_inh
 
+        # Synaptic normalization mode and reference sizes for the factors.
+        self.synaptic_normalization = synaptic_normalization
+        self.n_exc_ref = int(n_exc_ref)
+        self.n_inh_ref = int(n_inh_ref)
+        self.n_thal_ref = int(n_thal_ref)
+
         # Network Dynamics
         self.C_m = C_m
         self.tau_exc = tau_exc
@@ -142,6 +188,13 @@ class Params:
         self.n_thal = n_thal
         self.w_thal = w_thal
         self.p_thal = p_thal
+
+        # Weight factors for synaptic normalization.
+        self.normalization_factors = _normalization_factors(
+            self.synaptic_normalization,
+            self.n_exc, self.n_inh, self.n_thal,
+            self.n_exc_ref, self.n_inh_ref, self.n_thal_ref,
+        )
         
         # Background Noise
         self.bg_noise = bg_noise
@@ -173,6 +226,7 @@ class Params:
 _PARAM_FIELDS = (
     "duration", "dt", "seed", "v_dt",
     "n_exc", "n_inh",
+    "synaptic_normalization", "n_exc_ref", "n_inh_ref", "n_thal_ref",
     "C_m", "tau_exc", "tau_inh",
     "E_l", "E_e", "E_i", "v_thresh", "v_reset",
     "tau_ref_exc", "tau_ref_inh",
@@ -209,15 +263,7 @@ def simulate(
     stimulus: _stimuli.Rhythm | None = None,
     background: _stimuli.Rhythm | None = None,
 ) -> Result:
-    """Build the network, run it, and return the recorded activity.
-
-    ``stimulus`` is a :class:`auditory_entrainment.stimuli.Rhythm`
-    describing the rhythmic (accent) drive; ``None`` means no rhythmic
-    input. ``background`` is an optional steady metrical beat presented
-    on a separate input channel, so syncopated accents are heard against
-    a steady beat. The returned :class:`Result` carries ``params``, whose
-    ``describe()`` method renders the full parameter set for reporting.
-    """
+    """Build the network, run it, and return the recorded activity """
     if params is None:
         params = Params()
 
@@ -271,6 +317,7 @@ def _build_network(
     sigma_noise = params.bg_noise * mV
     noise_e = sigma_noise * (2 / (params.tau_exc * ms)) ** 0.5
     noise_i = sigma_noise * (2 / (params.tau_inh * ms)) ** 0.5
+    factors = params.normalization_factors
     bias_rng = _np.random.default_rng(params.seed)
     weight_rng = _np.random.default_rng(params.seed + 1)
     exc_bias = _np.clip(
@@ -366,7 +413,7 @@ def _build_network(
         name="s_ee",
     )
     s_ee.connect(condition="i != j", p=params.p_ee)
-    _assign_presynaptic_weights(s_ee, params.w_ee * nS, params.n_exc, params.weight_lognormal_sigma, weight_rng)
+    _assign_presynaptic_weights(s_ee, params.w_ee * factors["f_ee"] * nS, params.n_exc, params.weight_lognormal_sigma, weight_rng)
     s_ei = _b2.Synapses(
         exc, inh,
         on_pre="g_e_post += w",
@@ -374,7 +421,7 @@ def _build_network(
         name="s_ei",
     )
     s_ei.connect(p=params.p_ei)
-    _assign_presynaptic_weights(s_ei, params.w_ei * nS, params.n_exc, params.weight_lognormal_sigma, weight_rng)
+    _assign_presynaptic_weights(s_ei, params.w_ei * factors["f_ei"] * nS, params.n_exc, params.weight_lognormal_sigma, weight_rng)
     ei_delays = _np.clip(
         bias_rng.normal(params.delay_ei, params.delay_ei_std, params.n_exc),
         0.0,
@@ -388,7 +435,7 @@ def _build_network(
         name="s_ie",
     )
     s_ie.connect(p=params.p_ie)
-    _assign_presynaptic_weights(s_ie, params.w_ie * nS, params.n_inh, params.weight_lognormal_sigma, weight_rng)
+    _assign_presynaptic_weights(s_ie, params.w_ie * factors["f_ie"] * nS, params.n_inh, params.weight_lognormal_sigma, weight_rng)
     ie_delays = _np.clip(
         bias_rng.normal(params.delay_ie, params.delay_ie_std, params.n_inh),
         0.0,
@@ -402,7 +449,7 @@ def _build_network(
         name="s_ii",
     )
     s_ii.connect(condition="i != j", p=params.p_ii)
-    _assign_presynaptic_weights(s_ii, params.w_ii * nS, params.n_inh, params.weight_lognormal_sigma, weight_rng)
+    _assign_presynaptic_weights(s_ii, params.w_ii * factors["f_ii"] * nS, params.n_inh, params.weight_lognormal_sigma, weight_rng)
     s_thal = None
     if thal is not None:
         s_thal = _b2.Synapses(
@@ -412,7 +459,7 @@ def _build_network(
             name="s_thal",
         )
         s_thal.connect(p=params.p_thal)
-        _assign_presynaptic_weights(s_thal, params.w_thal * nS, params.n_thal, params.weight_lognormal_sigma, weight_rng)
+        _assign_presynaptic_weights(s_thal, params.w_thal * factors["f_thal"] * nS, params.n_thal, params.weight_lognormal_sigma, weight_rng)
     s_thal_bg = None
     if thal_bg is not None:
         s_thal_bg = _b2.Synapses(
@@ -422,7 +469,7 @@ def _build_network(
             name="s_thal_bg",
         )
         s_thal_bg.connect(p=params.p_thal)
-        _assign_presynaptic_weights(s_thal_bg, params.w_thal * nS, params.n_thal, params.weight_lognormal_sigma, weight_rng)
+        _assign_presynaptic_weights(s_thal_bg, params.w_thal * factors["f_thal"] * nS, params.n_thal, params.weight_lognormal_sigma, weight_rng)
 
     return {
         "exc": exc,
@@ -439,7 +486,7 @@ def _build_network(
 
 
 def _assign_presynaptic_weights(synapses, base_weight, n_pre, sigma, rng):
-    """Assign mean-preserving lognormal weights shared by each source neuron."""
+    """Assign lognormal weights for synapses, with identical weights for shared input neurons"""
     factors = _np.exp(sigma * rng.standard_normal(n_pre) - 0.5 * sigma**2)
     source_indices = _np.asarray(synapses.i[:], dtype=int)
     synapses.w = base_weight * factors[source_indices]
