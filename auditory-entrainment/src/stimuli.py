@@ -147,9 +147,9 @@ class Rhythm:
         """Firing rate in Hz at time(s) ``t`` in seconds."""
         return pattern_rate(self.pattern, t, self.step_duration, self.rate_on, self.rate_off)
 
-    def spike_trains(self, duration: float, n_neurons: int = 100):
+    def spike_trains(self, duration: float, n_neurons: int = 100, seed=0):
         """Spike times and neuron indices over ``duration`` seconds."""
-        return spike_trains(self, duration, n_neurons=n_neurons)
+        return spike_trains(self, duration, n_neurons=n_neurons, seed=seed)
 
     def spike_generator_group(self, duration: float, n_neurons: int = 100, seed=0):
         """Brian2 SpikeGeneratorGroup firing according to this rhythm."""
