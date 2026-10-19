@@ -39,24 +39,7 @@ PATTERNS = {
     2: [1, 0, 0, 0, 1, 0, 0, 0],
     3: [1, 0, 1, 0, 1, 0, 1, 0],
     4: [1, 0, 0, 1, 0, 0, 1, 0],
-    5: [1, 0, 1, 1, 0, 0, 1, 0],
-    6: [1, 0, 0, 1, 0, 1, 0, 0],
-    7: [0, 1, 0, 1, 1, 0, 0, 0],
-    8: [1, 0, 0, 1, 0, 1, 0, 1],
-    9: [0, 1, 0, 1, 0, 1, 0, 1],
-    10: [0, 1, 1, 0, 0, 1, 1, 0],
-    # Syncopation gradient: three onsets per bar, LHL 0-7, period 8 (0.5 Hz).
-    11: [1, 0, 0, 0, 0, 0, 1, 1],  # LHL 0
-    12: [0, 0, 1, 1, 1, 0, 0, 0],  # LHL 1
-    13: [0, 0, 0, 1, 1, 1, 0, 0],  # LHL 2
-    14: [0, 0, 0, 0, 1, 1, 1, 0],  # LHL 3
-    15: [0, 0, 0, 1, 0, 1, 1, 0],  # LHL 4
-    16: [0, 0, 0, 0, 0, 1, 1, 1],  # LHL 5
-    17: [0, 0, 0, 0, 1, 0, 1, 1],  # LHL 6
-    18: [0, 0, 0, 1, 0, 0, 1, 1],  # LHL 7
-    # Off-beat gradient extremes: 0 and 3 off-beat accents (3 onsets each).
-    19: [1, 0, 0, 0, 1, 0, 1, 0],  # 0 off-beat (all on beats 0, 4, 6)
-    20: [0, 0, 0, 1, 0, 1, 0, 1],  # 3 off-beat (all off beats 3, 5, 7)
+    5: [0, 1, 0, 1, 0, 1, 0, 1],
 }
 
 PATTERN_NAMES = {
@@ -64,33 +47,13 @@ PATTERN_NAMES = {
     2: "onbeat",  # quarter-note pulse on the downbeats
     3: "eighths",  # straight eighth notes
     4: "tresillo",  # 3-3-2 syncopation, onsets 0, 3, 6
-    5: "syncopated-0236",
-    6: "syncopated-035",
-    7: "syncopated-134",
-    8: "syncopated-0357",
-    9: "offbeat",  # every off-beat eighth, onsets 1, 3, 5, 7
-    10: "syncopated-126",
-    11: "gradient-l0",
-    12: "gradient-l1",
-    13: "gradient-l2",
-    14: "gradient-l3",
-    15: "gradient-l4",
-    16: "gradient-l5",
-    17: "gradient-l6",
-    18: "gradient-l7",
-    19: "offbeat0",
-    20: "offbeat3",
+    5: "offbeat",  # every off-beat eighth, onsets 1, 3, 5, 7
 }
 
 
-# One pattern per LHL syncopation level (0-7). Every pattern has three
-# onsets per bar and period 8 (0.5 Hz pulse), so pulse frequency and
-# onset count are held fixed across the gradient.
-SYNCOPATION_GRADIENT = (11, 12, 13, 14, 15, 16, 17, 18)
-
-# Gradient ordered by off-beat accent count (the WNBD axis): 0, then
-# four patterns with 1 off-beat accent, four with 2, then 3.
-OFFBEAT_GRADIENT = (19, 11, 12, 14, 17, 13, 15, 16, 18, 20)
+# The reduced pattern set used by the sweep experiments.
+SYNCOPATION_GRADIENT = (4, 5)
+OFFBEAT_GRADIENT = (1, 2, 3, 4, 5)
 
 
 # On-beat metrical background: a quarter-note pulse (the tactus) on the
@@ -102,23 +65,24 @@ ONBEAT_BACKGROUND = (1, 0, 1, 0, 1, 0, 1, 0)
 
 @dataclass(frozen=True)
 class Rhythm:
-    """A repeating onset pattern mapped onto time.
+    """
+    A repeating onset pattern mapped onto time.
 
     Attributes
     ----------
     pattern : tuple of int
-        Binary onset pattern; ``1`` marks a step containing a beat.
+        Binary pulse where 1 is on and 0 is off
     step_duration : float
-        Duration of one step in seconds.
+        Duration of one step in seconds
     rate_on : float
-        Mean firing rate in Hz of each input neuron during an onset step.
+        Mean firing rate (Hz) of each input neuron during an onset step
     rate_off : float
-        Mean firing rate in Hz of each input neuron during a silent step.
+        Mean firing rate (Hz) of each input neuron during a silent step
     jitter_ms : float
-        Standard deviation of an independent onset-time offset for each
-        neuron and active pattern step, in milliseconds.
+        Standard deviation of an independent onset time offset for each
+        neuron and active pattern step, in milliseconds
     name : str
-        Human-readable label.
+        Label
     """
 
     pattern: tuple[int, ...]
@@ -198,7 +162,6 @@ def spike_trains(rhythm, duration, n_neurons=100, seed=0):
     each active step.
 
     Returns
-    -------
     times : ndarray
         Spike times in seconds.
     indices : ndarray of int
@@ -255,4 +218,4 @@ def _pattern_times(pattern, step_duration, duration, rate_on, rate_off, jitter=0
 SILENCE = Rhythm((0,) * 8, rate_on=0.0, rate_off=0.0, name="silence")
 NO_INPUT = SILENCE
 RHYTHMIC = make_rhythm(2)
-SYNCOPATED = {pid: make_rhythm(pid) for pid in (4, 5, 6, 7, 8, 9, 10)}
+SYNCOPATED = {pid: make_rhythm(pid) for pid in (4, 5)}
