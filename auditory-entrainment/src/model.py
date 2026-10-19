@@ -1,12 +1,11 @@
 """
-Brian2 model of neural entrainment.
+Brian2 model of neural entrainment
 
 Excitatory/inhibitory LIF network with:
 
-- spike-frequency adaptation in the inhibitory neurons
-- PING-style gamma oscillations, 
+- spike frequency adaptation in the inhibitory neurons
+- PING style gamma oscillations, 
 - rhythmic thalamic drive 
-
 """
 
 from dataclasses import dataclass as _dataclass

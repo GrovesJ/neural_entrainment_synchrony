@@ -1,37 +1,4 @@
-"""Sweep every rhythm and score syncopation and synchrony.
-
-For each rhythm in ``stimuli.OFFBEAT_GRADIENT`` (three onsets per bar,
-ordered by how many accents fall off the beat) the network is simulated
-with Gaussian background noise and the scores are averaged over seeds.
-
-All phase measures are computed at two fixed reference frequencies: the
-bar rate (0.5 Hz) and the beat rate (2 Hz, the quarter-note tactus),
-where on- vs off-beat effects appear. With ``background=True`` a steady
-on-beat pulse is presented on a separate input channel, and a beat-alone
-baseline row is added.
-
-- syncopation: Longuet-Higgins & Lee score, off-beat accent count, and
-  Weighted Note-to-Beat Distance (WNBD) of the onset pattern;
-- synchrony: phase-locking value (PLV) and vector strength (VS) at 0.5
-  and 2 Hz, the Golomb-Hansel chi measure, and the mean pairwise
-  spike-count correlation in 5 ms bins.
-
-The module exposes two independent experiment families:
-
-- ``run_rhythm_sweep``: compare the different rhythm patterns while
-  holding the network parameters fixed;
-- ``run_parameter_sweep``: run the stimulus-weight/noise phase diagram
-  and the separate jitter sweep while holding the rhythm fixed.
-
-Usage:
-
-    python experiments/sweep.py rhythms [duration_ms] [noise] [n_seeds] [background] [beat_rate_on]
-    python experiments/sweep.py parameters
-    python experiments/sweep.py all
-
-The legacy ``offbeat`` mode and positional invocation are retained as
-aliases for the rhythm sweep.
-"""
+"""Run rhythm, parameter, and jitter sweeps."""
 
 from __future__ import annotations
 
@@ -67,14 +34,7 @@ _METRIC_KEYS = (
 
 
 def _score(result, freqs: dict[str, float] | None = None) -> dict:
-    """All synchrony metrics for one simulated result, as a dict.
-
-    ``freqs`` optionally adds an extra PLV/VS pair per reference
-    frequency, keyed by name: ``{"stim": 1.0}`` adds ``plv_exc_stim``,
-    ``plv_inh_stim``, ``vs_exc_stim`` and ``vs_inh_stim``. The fixed bar
-    and beat rates are always scored, so sweeps whose drive frequency is
-    neither can still measure locking to the stimulus.
-    """
+    """Return synchrony metrics for one simulated result."""
     fs = 1.0 / float(np.mean(np.diff(result.rate_t)))
     exc_mask = result.spike_indices < result.n_exc
     inh_mask = ~exc_mask
@@ -120,18 +80,7 @@ def run_rhythm_sweep(
     background: bool = False,
     beat_rate_on: float = 20.0,
 ) -> list[dict]:
-    """Simulate every rhythm and return one row of scores per rhythm.
-
-    ``duration_ms`` is the simulation length per rhythm in milliseconds.
-    ``bg_noise`` is the Gaussian noise level in mV (0 = deterministic).
-    ``n_seeds`` independent seeds are averaged to stabilise the scores.
-    ``background`` presents an on-beat quarter-note pulse on a separate
-    input channel so syncopated accents are heard against a steady
-    metrical beat, and adds a beat-alone baseline row for comparison.
-    ``beat_rate_on`` is the firing rate (Hz) of the background beat
-    channel during an onset step, so the beat can be made subtler than
-    the accents (which use ``make_rhythm``'s 40 Hz).
-    """
+    """Simulate each rhythm and return one row of scores per rhythm."""
     rows = []
 
 
@@ -287,13 +236,7 @@ def parameter_rhythms(
     accent_rate_on: float = PHASE_ACCENT_RATE_ON,
     meter_rate_on: float = PHASE_METER_RATE_ON,
 ) -> tuple[stimuli.Rhythm, stimuli.Rhythm]:
-    """Build the accent and stable meter used by parameter sweeps.
-
-    Jitter is applied to the accent only. With the default step duration,
-    the accent pattern has a 1 Hz period and the meter has a 2 Hz period.
-    Their overlap produces a 2 Hz pulse train with a 1 Hz amplitude
-    modulation.
-    """
+    """Build the accent and meter rhythms used by parameter sweeps."""
     accent = stimuli.make_rhythm(
         PHASE_ACCENT_PATTERN,
         step_duration=step_duration,
@@ -358,15 +301,7 @@ def run_phase_diagram(
     duration_ms: float | None = None,
     reference: dict | None = None,
 ) -> list[dict]:
-    """Simulate the ``stim_w`` x ``noise`` grid; one row per cell.
-
-    Only the stimulus weight and the background noise vary; every other
-    parameter comes from ``reference`` (``PHASE_REFERENCE`` by default),
-    so the grid isolates drive against noise. ``duration_ms`` overrides
-    the reference duration for shorter pilot runs, and ``jitter_ms``
-    The accent is clean in the phase diagram; the meter is supplied on
-    the model's separate background channel.
-    """
+    """Simulate the stimulus-weight and noise grid."""
     stim_w_values = tuple(stim_w_values)
     noise_values = tuple(noise_values)
     accent, meter = parameter_rhythms(
@@ -412,12 +347,7 @@ def run_jitter_sweep(
     duration_ms: float | None = None,
     reference: dict | None = None,
 ) -> list[dict]:
-    """Sweep stimulus jitter at each operating point in ``points``.
-
-    ``points`` are ``(stim_w, noise)`` pairs sampled from the phase
-    diagram; one row per (point, jitter) pair. Jitter is applied only to
-    the accent rhythm. The meter remains stable at every jitter level.
-    """
+    """Sweep accent jitter at each operating point."""
     points = tuple((float(w), float(n)) for w, n in points)
     jitter_values = tuple(jitter_values)
     rows = []
@@ -467,13 +397,7 @@ def run_parameter_sweep(
     duration_ms: float | None = None,
     reference: dict | None = None,
 ) -> dict[str, list[dict]]:
-    """Run the parameter experiments and return both result tables.
-
-    The primary table is the ``stim_w`` x ``noise`` phase diagram. The
-    secondary table sweeps accent ``jitter_ms`` at fixed operating points.
-    Every row contains the same stable meter channel and fixed accent
-    pattern, apart from the requested accent jitter.
-    """
+    """Run the phase-diagram and jitter parameter sweeps."""
     return {
         "phase": run_phase_diagram(
             stim_w_values=stim_w_values,
