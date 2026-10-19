@@ -1,4 +1,4 @@
-"""Single-neuron SNR from a point-process GLM."""
+"""Point Processed Generalized Linear Model for single neuron SNR estimation from Czanner et al. (2015)"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def bin_spikes(spike_times, duration_s: float, bin_ms: float) -> np.ndarray:
 
 
 def stimulus_covariates(t, freq: float, harmonics=(1, 2)) -> np.ndarray:
-    """Build sine/cosine stimulus-phase covariates."""
+    """Build stimulus phase covariates"""
     t = np.asarray(t, dtype=float)
     columns = []
     for h in harmonics:
@@ -37,7 +37,7 @@ def stimulus_covariates(t, freq: float, harmonics=(1, 2)) -> np.ndarray:
 
 
 def history_covariates(spike_counts, n_lags: int) -> np.ndarray:
-    """Build lagged spike-history covariates."""
+    """Build spike history"""
     spike_counts = np.asarray(spike_counts, dtype=np.int64)
     n_bins = spike_counts.size
     history = np.zeros((n_bins, n_lags), dtype=float)
@@ -47,7 +47,7 @@ def history_covariates(spike_counts, n_lags: int) -> np.ndarray:
 
 
 def _poisson_glm(X, y):
-    """Fit a Poisson GLM and return parameters and log-likelihood."""
+    """Fit a Poisson linear model and return parameters and log odds"""
     y = np.asarray(y, dtype=float)
     X = np.asarray(X, dtype=float)
     n_bins = X.shape[0]
@@ -84,7 +84,7 @@ def deviance(
     history,
     min_mean_rate: float = 1e-9,
 ) -> dict:
-    """Decompose Poisson-GLM deviance into SNR components."""
+    """Deconstruct Poisson GLM deviance into SNR components"""
     y = np.asarray(spike_counts, dtype=float)
     mean_rate = max(float(y.mean()), min_mean_rate)
 
@@ -115,7 +115,7 @@ def single_neuron_snr(
     n_lags: int = 20,
     harmonics=(1, 2),
 ) -> dict:
-    """Estimate SNR for one neuron's spike train."""
+    """Estimate SNR for one neuron's spike train"""
     spike_times = np.asarray(spike_times, dtype=float)
     counts = bin_spikes(spike_times, duration_s, bin_ms)
     t = np.arange(counts.size) * (bin_ms / 1000.0)
@@ -139,7 +139,7 @@ def population_snr(
     min_spikes: int = 20,
     neuron_ids=None,
 ) -> list[dict]:
-    """Estimate SNR for selected neurons."""
+    """Estimate SNR for selected neurons"""
     spike_times = np.asarray(spike_times, dtype=float)
     spike_indices = np.asarray(spike_indices, dtype=np.int64)
     if spike_times.size != spike_indices.size:
