@@ -12,8 +12,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 ```
 
 The script creates `.venv`, installs the model and notebook dependencies, and
-registers the `Python (auditory-entrainment)` Jupyter kernel. In VS Code, open
-`notebooks/02_tuning.ipynb` and select that kernel.
+registers the `Python (auditory-entrainment)` Jupyter kernel.
 
 To activate the environment manually later:
 
