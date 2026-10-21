@@ -61,7 +61,7 @@ MEDIUM_ENTRAINMENT_PARAMS = {
     "p_ei": 0.4,
     "p_ie": 0.5,
     "p_ii": 0.5,
-    "p_thal": 0.5,
+    "p_thal": 0.4,
     "delay_ei": 1.5,
     "delay_ie": 1.5,
     "delay_ei_std": 0.5,
@@ -79,6 +79,18 @@ MEDIUM_STIMULUS = {
     "rate_off": 0.0,
     "jitter_ms": 1.0,
 }
+
+
+def _thal_count(pset: dict) -> int:
+    """Thalamic population size, mirroring the notebook's size-invariant rule.
+
+    With synaptic normalization on, the thalamic population scales with
+    ``n_exc`` so the feedforward:recurrent ratio stays size-invariant;
+    with normalization off, the base reference size is used unchanged.
+    """
+    if pset["synaptic_normalization"] != "none":
+        return max(1, round(pset["n_thal_ref"] * pset["n_exc"] / pset["n_exc_ref"]))
+    return int(pset["n_thal_ref"])
 
 
 def simulate_gradient(
@@ -105,6 +117,7 @@ def simulate_gradient(
         for k in range(n_seeds):
             params = model.Params(
                 **MEDIUM_ENTRAINMENT_PARAMS,
+                n_thal=_thal_count(MEDIUM_ENTRAINMENT_PARAMS),
                 duration=duration_ms,
                 dt=dt,
                 seed=base_seed + k,
@@ -162,20 +175,22 @@ def _series(rows: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
 
 
 def plot_summary(rows: list[dict], outdir: Path) -> Path:
-    """Bar chart of PLV, vector strength, and firing rate across conditions."""
+    """Bar chart of PLV, vector strength, pairwise correlation, and firing rate."""
     outdir.mkdir(parents=True, exist_ok=True)
     order = _pattern_order(rows)
     x = np.arange(len(order))
     labels = [f"{name}\nLHL={lhl}" for _, name, lhl in order]
     n_seeds = len(rows) // len(order)
 
+    # (excitatory key, inhibitory key, title, y-axis lower bound or None for auto)
     panels = [
-        ("plv_exc_beat", "plv_inh_beat", "PLV to beat (2 Hz)"),
-        ("vs_exc_beat", "vs_inh_beat", "Vector strength to beat (2 Hz)"),
-        ("rate_exc_hz", "rate_inh_hz", "Firing rate (Hz)"),
+        ("plv_exc_beat", "plv_inh_beat", "PLV to beat (2 Hz)", 0.0),
+        ("vs_exc_beat", "vs_inh_beat", "Vector strength to beat (2 Hz)", 0.0),
+        ("corr_exc", "corr_inh", "Mean pairwise corr", None),
+        ("rate_exc_hz", "rate_inh_hz", "Firing rate (Hz)", None),
     ]
-    fig, axes = plt.subplots(1, 3, figsize=(14, 4.2), squeeze=True)
-    for ax, (e_key, i_key, title) in zip(axes, panels):
+    fig, axes = plt.subplots(1, len(panels), figsize=(4.6 * len(panels), 4.2), squeeze=True)
+    for ax, (e_key, i_key, title, ymin) in zip(axes, panels):
         e_mean, e_sem = _series(rows, e_key)
         i_mean, i_sem = _series(rows, i_key)
         width = 0.35
@@ -186,8 +201,8 @@ def plot_summary(rows: list[dict], outdir: Path) -> Path:
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
         ax.set_title(title)
-        if "rate" not in e_key:
-            ax.set_ylim(0.0, 1.0)
+        if ymin is not None:
+            ax.set_ylim(ymin, 1.0)
         ax.grid(axis="y", alpha=0.3)
     axes[0].legend()
     fig.suptitle(
