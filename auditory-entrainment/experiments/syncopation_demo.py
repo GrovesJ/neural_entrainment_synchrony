@@ -2,10 +2,10 @@
 
 Simulates a small set of rhythms spanning the syncopation gradient
 (eighths -> tresillo -> offbeat by default), scores each with the same
-beat/bar synchrony measures used by ``experiments/sweep.py``, writes one
-row per (pattern, seed) to ``results/syncopation_demo.csv``, and renders
-a summary bar chart (PLV, vector strength, firing rate) with
-seed-averaged error bars under ``figures/``.
+medium entrainment parameter set, writes one row per (pattern, seed) to
+``results/syncopation_demo.csv``, and renders a summary bar chart (PLV,
+vector strength, firing rate) with seed-averaged error bars under
+``figures/``.
 
 The simulation is the slow part, so run this once on the faster machine
 and keep the CSV and PNG for later use.
@@ -45,24 +45,72 @@ FIGURES_DIR = _ROOT / "figures"
 # Low, mid, high syncopation: eighths (no syncopation), tresillo, offbeat.
 DEFAULT_PATTERNS = (3, 4, 5)
 
+# "Medium Entrainment" from notebooks/parameter_sets.json, translated to
+# model.Params names. The preset's show_background setting is represented by
+# the on-beat background passed to model.simulate below.
+MEDIUM_ENTRAINMENT_PARAMS = {
+    "I_bias": 125.0,
+    "I_bias_std": 15.0,
+    "weight_lognormal_sigma": 0.4,
+    "w_thal": 0.08,
+    "w_ee": 1.5,
+    "w_ei": 0.85,
+    "w_ie": 3.0,
+    "w_ii": 4.0,
+    "p_ee": 0.02,
+    "p_ei": 0.4,
+    "p_ie": 0.5,
+    "p_ii": 0.5,
+    "p_thal": 0.5,
+    "delay_ei": 1.5,
+    "delay_ie": 1.5,
+    "delay_ei_std": 0.5,
+    "delay_ie_std": 0.5,
+    "n_exc": 6400,
+    "n_inh": 1600,
+    "synaptic_normalization": "sqrt",
+    "n_exc_ref": 400,
+    "n_inh_ref": 100,
+    "n_thal_ref": 20,
+}
+MEDIUM_STIMULUS = {
+    "step_duration": 0.25,
+    "rate_on": 40.0,
+    "rate_off": 0.0,
+    "jitter_ms": 1.0,
+}
+
 
 def simulate_gradient(
     patterns=DEFAULT_PATTERNS,
-    duration_ms: float = 8000.0,
+    duration_ms: float = 10000.0,
     dt: float = 0.1,
-    bg_noise: float = 3.0,
+    bg_noise: float = 3.4,
     n_seeds: int = 3,
     base_seed: int = 42,
 ) -> list[dict]:
     """Simulate each rhythm and return one row per (pattern, seed)."""
     rows: list[dict] = []
+    background = stimuli.Rhythm(
+        stimuli.ONBEAT_BACKGROUND,
+        step_duration=MEDIUM_STIMULUS["step_duration"],
+        rate_on=MEDIUM_STIMULUS["rate_on"],
+        name="beat",
+    )
     for pid in patterns:
-        rhythm = stimuli.make_rhythm(pid)
+        rhythm = stimuli.make_rhythm(
+            pid,
+            **MEDIUM_STIMULUS,
+        )
         for k in range(n_seeds):
             params = model.Params(
-                duration=duration_ms, dt=dt, seed=base_seed + k, bg_noise=bg_noise
+                **MEDIUM_ENTRAINMENT_PARAMS,
+                duration=duration_ms,
+                dt=dt,
+                seed=base_seed + k,
+                bg_noise=bg_noise,
             )
-            result = model.simulate(params, stimulus=rhythm)
+            result = model.simulate(params, stimulus=rhythm, background=background)
             row = {
                 "pattern": pid,
                 "name": stimuli.PATTERN_NAMES[pid],
@@ -158,10 +206,10 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--patterns", default=",".join(map(str, DEFAULT_PATTERNS)),
                         help="Comma-separated pattern ids (default 3,4,5).")
-    parser.add_argument("--duration-ms", type=float, default=8000.0)
+    parser.add_argument("--duration-ms", type=float, default=10000.0)
     parser.add_argument("--n-seeds", type=int, default=3)
     parser.add_argument("--base-seed", type=int, default=42)
-    parser.add_argument("--bg-noise", type=float, default=3.0)
+    parser.add_argument("--bg-noise", type=float, default=3.4)
     parser.add_argument("--csv", default="syncopation_demo.csv")
     parser.add_argument("--figures-dir", default=str(FIGURES_DIR))
     args = parser.parse_args(argv)
