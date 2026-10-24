@@ -1,11 +1,51 @@
 """
 Brian2 model of neural entrainment
 
-Excitatory/inhibitory LIF network with:
+Excitatory/inhibitory conductance based leaky integrate and fire (LIF) neural network with:
 
 - spike frequency adaptation in the inhibitory neurons
 - PING style gamma oscillations, 
-- rhythmic thalamic drive 
+- rhythmic thalamic drive
+
+The membrane potential of each neuron is governed by the following equations:
+
+- C_m * dv/dt = g_leak * (E_leak - v) + g_e * (E_e - v) + g_i * (E_i - v) - w_adapt * a + I_bias + noise
+- da/dt = -a / tau_adapt
+- dg_e/dt = -g_e / tau_e
+- dg_i/dt = -g_i / tau_i
+
+where:
+- v is the membrane potential
+- a is the adaptation variable
+- g_e is the excitatory conductance
+- g_i is the inhibitory conductance
+- C_m is the membrane capacitance
+- g_leak is the leak conductance
+- E_leak is the leak reversal potential
+- E_e is the excitatory reversal potential
+- E_i is the inhibitory reversal potential
+- w_adapt is the adaptation current amplitude
+- a is the adaptation variable
+- I_bias is the bias current
+- noise is the noise term
+
+
+
+Recurring algorithm for each neuron:
+
+1. Each time step the membrane potential is updated according to the above equations
+2. If exceeds the threshold, a spike is emitted and the potential is reset to the reset potential
+3. The adaptation variable is incremented by delta_adapt and the neuron enters a refractory period
+4. The excitatory and inhibitory conductances decay exponentially with time constants tau_e and tau_i respectively
+5. The thalamic input is modeled as a spike generator that delivers spikes to the excitatory neurons with a certain probability and weight
+
+
+Dynamical features:
+
+- The network exhibits gamma oscillations due to the interaction between excitatory and inhibitory neurons (PING mechanism)
+- The thalamic input can entrain the network to a rhythmic stimulus
+
+
 """
 
 from dataclasses import dataclass as _dataclass

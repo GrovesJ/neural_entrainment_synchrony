@@ -1,11 +1,13 @@
-"""Stimulus generation utilities for auditory entrainment.
+"""
+Stimulus generation utilities for auditory entrainment.
 
 Rhythmic stimuli are binary onset patterns over a fixed number of equal
-steps per cycle. A ``1`` marks a step containing a beat and a ``0``
-marks a silent step. Patterns repeat for the full duration of a trial
-and are converted into deterministic spike trains for the model's input
-population, or into a time-varying firing rate for plotting and
-analysis.
+steps per cycle.
+
+- "1" marks a step containing a beat 
+- "0" marks a silent step.
+- Patterns repeat for the full duration of a trial
+- Patterns are converted into deterministic spike trains for the models input population
 """
 
 from __future__ import annotations
@@ -154,18 +156,19 @@ def pattern_rate(pattern, t, step_duration=0.25, rate_on=40.0, rate_off=0.0):
 
 
 def spike_trains(rhythm, duration, n_neurons=100, seed=0):
-    """Generate spike trains for ``n_neurons`` input neurons.
+    """
+    Generates spike trains for "n_neurons" input neurons
 
-    Every neuron emits a regular spike train at ``rate_on`` Hz during
-    onset steps and ``rate_off`` Hz during silent steps. If ``jitter_ms``
-    is nonzero, each neuron receives an independent onset-time offset for
-    each active step.
+    - Every neuron emits a regular spike train at "rate_on" Hz during
+    onset steps and "rate_off" Hz during silent steps.
+    - If "jitter_ms" is nonzero, each neuron receives an independent onset time offset for
+    each active step
 
-    Returns
-    times : ndarray
-        Spike times in seconds.
-    indices : ndarray of int
-        Neuron index of each spike in ``times``.
+    Returns:
+        times : ndarray
+            Spike times in seconds.
+        indices : ndarray of int
+            Neuron index of each spike in ``times``.
     """
     if rhythm.jitter_ms < 0:
         raise ValueError("jitter_ms must be non-negative.")
