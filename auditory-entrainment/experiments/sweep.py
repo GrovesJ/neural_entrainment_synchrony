@@ -161,8 +161,119 @@ def run_rhythm_sweep(
     return rows
 
 
-# Backward-compatible name used by earlier notebooks and scripts.
+# Backward compatible name used by earlier notebooks and scripts.
 run_sweep = run_rhythm_sweep
+
+
+# "Medium Entrainment" regime ("Level 2 - Medium" in
+# notebooks/parameter_sets.json), translated to model.Params names. The
+# preset's show_background setting is represented by the on-beat background
+# passed to model.simulate. This is the operating point used by the
+# sixteenth-note rhythm sweep and by experiments/syncopation_demo.py.
+MEDIUM_ENTRAINMENT_PARAMS = {
+    "I_bias": 125.0,
+    "I_bias_std": 15.0,
+    "weight_lognormal_sigma": 0.4,
+    "w_thal": 0.08,
+    "w_ee": 1.5,
+    "w_ei": 0.85,
+    "w_ie": 3.0,
+    "w_ii": 4.0,
+    "p_ee": 0.02,
+    "p_ei": 0.4,
+    "p_ie": 0.5,
+    "p_ii": 0.5,
+    "p_thal": 0.4,
+    "delay_ei": 1.5,
+    "delay_ie": 1.5,
+    "delay_ei_std": 0.5,
+    "delay_ie_std": 0.5,
+    "n_exc": 6400,
+    "n_inh": 1600,
+    "synaptic_normalization": "sqrt",
+    "n_exc_ref": 400,
+    "n_inh_ref": 100,
+    "n_thal_ref": 20,
+}
+
+MEDIUM_16_STEP_DURATION = 0.125  # one sixteenth note at 120 BPM
+
+
+def _thal_count(pset: dict) -> int:
+    """Thalamic population size, mirroring the notebook's size-invariant rule.
+
+    With synaptic normalization on, the thalamic population scales with
+    ``n_exc`` so the feedforward:recurrent ratio stays size-invariant;
+    with normalization off, the base reference size is used unchanged.
+    """
+    if pset["synaptic_normalization"] != "none":
+        return max(1, round(pset["n_thal_ref"] * pset["n_exc"] / pset["n_exc_ref"]))
+    return int(pset["n_thal_ref"])
+
+
+def run_rhythm_sweep_16(
+    duration_ms: float = 20000.0,
+    dt: float = 0.1,
+    bg_noise: float = 3.4,
+    n_seeds: int = 3,
+    base_seed: int = 42,
+    background: bool = True,
+    beat_rate_on: float = 40.0,
+) -> list[dict]:
+    """Simulate each 16-step ``P16`` rhythm under medium entrainment."""
+    rows = []
+    beat = (
+        stimuli.Rhythm(
+            stimuli.ONBEAT_BACKGROUND_16,
+            step_duration=MEDIUM_16_STEP_DURATION,
+            rate_on=beat_rate_on,
+            name="beat",
+        )
+        if background
+        else None
+    )
+    for name, pattern in stimuli.P16.items():
+        accent = stimuli.Rhythm(
+            tuple(pattern),
+            step_duration=MEDIUM_16_STEP_DURATION,
+            rate_on=40.0,
+            rate_off=0.0,
+            jitter_ms=1.0,
+            name=name,
+        )
+        scores = {key: [] for key in _METRIC_KEYS}
+        for k in range(n_seeds):
+            params = model.Params(
+                **MEDIUM_ENTRAINMENT_PARAMS,
+                n_thal=_thal_count(MEDIUM_ENTRAINMENT_PARAMS),
+                duration=duration_ms,
+                dt=dt,
+                seed=base_seed + k,
+                bg_noise=bg_noise,
+            )
+            result = model.simulate(params, stimulus=accent, background=beat)
+            for key, value in _score(result).items():
+                scores[key].append(value)
+        row = {
+            "pattern": name,
+            "name": name,
+            "lhl": syncopation.lhl(pattern),
+            "offbeat_count": syncopation.offbeat_count(pattern),
+            "wnbd": syncopation.wnbd(pattern),
+            "freq": _BAR_FREQ,
+            **{key: float(np.mean(scores[key])) for key in _METRIC_KEYS},
+        }
+        rows.append(row)
+        print(
+            f"  {row['name']:<20} "
+            f"lhl={row['lhl']:>2}  off={row['offbeat_count']}  wnbd={row['wnbd']:.2f}  "
+            f"f={row['freq']:.2f} Hz  "
+            f"plv_bar={row['plv_exc_bar']:.3f}/{row['plv_inh_bar']:.3f}  "
+            f"plv_beat={row['plv_exc_beat']:.3f}/{row['plv_inh_beat']:.3f}  "
+            f"chi={row['chi_exc']:.3f}  corr={row['corr_exc']:.3f}  "
+            f"r_e={row['rate_exc_hz']:.2f} Hz"
+        )
+    return rows
 
 
 # --------------------------------------------------------------------
@@ -181,6 +292,7 @@ JITTER_POINTS = ((0.2, 1.0), (0.1, 4.0), (0.05, 12.0))
 PHASE_CSV = "phase_diagram_stim_w_noise.csv"
 JITTER_CSV = "jitter_sweep.csv"
 RHYTHM_CSV = "rhythm_sweep.csv"
+RHYTHM_16_CSV = "rhythm_sweep_16.csv"
 
 # The parameter sweep uses a simple 1 Hz accent modulation against a
 # stable 2 Hz meter at the default 0.25 s step duration. Both frequencies
@@ -397,7 +509,7 @@ def run_parameter_sweep(
     duration_ms: float | None = None,
     reference: dict | None = None,
 ) -> dict[str, list[dict]]:
-    """Run the phase-diagram and jitter parameter sweeps."""
+    """Run the phase diagram and jitter parameter sweeps."""
     return {
         "phase": run_phase_diagram(
             stim_w_values=stim_w_values,
@@ -450,6 +562,25 @@ def _run_rhythm(argv: list[str], filename: str = RHYTHM_CSV) -> None:
     print(f"\nSaved results to {path}")
 
 
+def _run_rhythm_16(argv: list[str], filename: str = RHYTHM_16_CSV) -> None:
+    duration_ms = float(argv[0]) if len(argv) > 0 else 20000.0
+    bg_noise = float(argv[1]) if len(argv) > 1 else 3.4
+    n_seeds = int(argv[2]) if len(argv) > 2 else 3
+    background = bool(int(argv[3])) if len(argv) > 3 else True
+    beat_rate_on = float(argv[4]) if len(argv) > 4 else 40.0
+    print(
+        f"Sweeping {len(stimuli.P16)} sixteenth-note rhythms over {duration_ms:.0f} ms "
+        f"(medium entrainment, bg_noise={bg_noise} mV, {n_seeds} seeds, "
+        f"background={background}, beat_rate_on={beat_rate_on} Hz) each..."
+    )
+    rows = run_rhythm_sweep_16(
+        duration_ms=duration_ms, bg_noise=bg_noise, n_seeds=n_seeds,
+        background=background, beat_rate_on=beat_rate_on,
+    )
+    path = _save_csv(rows, filename)
+    print(f"\nSaved results to {path}")
+
+
 def _run_parameters() -> None:
     n_cells = len(PHASE_STIM_W) * len(PHASE_NOISE)
     n_jitter = len(JITTER_POINTS) * len(JITTER_MS_VALUES)
@@ -464,7 +595,7 @@ def _run_parameters() -> None:
     print(f"Saved results to {_save_csv(tables['jitter'], JITTER_CSV)}")
 
 
-_SWEEP_MODES = ("rhythms", "parameters", "offbeat", "phase", "jitter", "all")
+_SWEEP_MODES = ("rhythms", "rhythms16", "parameters", "offbeat", "phase", "jitter", "all")
 
 
 def main() -> None:
@@ -477,6 +608,10 @@ def main() -> None:
         # Keep the old no-mode output filename for existing analysis scripts.
         filename = "sweep.csv" if mode == "offbeat" else RHYTHM_CSV
         _run_rhythm(argv, filename)
+        return
+
+    if mode == "rhythms16":
+        _run_rhythm_16(argv)
         return
 
     if mode == "parameters":

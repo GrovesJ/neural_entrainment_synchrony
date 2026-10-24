@@ -20,11 +20,16 @@ import numpy as np # type: ignore
 __all__ = [
     "PATTERNS",
     "PATTERN_NAMES",
+    "PATTERNS_16",
+    "PATTERN_NAMES_16",
+    "P16",
     "SYNCOPATION_GRADIENT",
     "OFFBEAT_GRADIENT",
     "ONBEAT_BACKGROUND",
+    "ONBEAT_BACKGROUND_16",
     "Rhythm",
     "make_rhythm",
+    "make_rhythm_16",
     "pattern_period",
     "pattern_rate",
     "spike_trains",
@@ -52,6 +57,36 @@ PATTERN_NAMES = {
     5: "offbeat",  # every off-beat eighth, onsets 1, 3, 5, 7
 }
 
+# Sixteenth-note versions of the same archetypes, sampled on a 16-step
+# grid (one step = one sixteenth note in a 4/4 bar). These are what the
+# metrical hierarchy in ``measures.syncopation.metrical_weights`` can resolve
+# to four levels of beat strength.
+PATTERNS_16 = {
+    1: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    2: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+    3: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+    4: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    5: [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+}
+
+PATTERN_NAMES_16 = {
+    1: "single-16",  # one downbeat per cycle
+    2: "onbeat-16",  # quarter-note pulse on the downbeats
+    3: "eighths-16",  # straight eighth notes
+    4: "tresillo-16",  # 3-3-2 syncopation, onsets 0, 6, 12
+    5: "offbeat-16",  # every off-beat eighth, onsets 1, 3, ..., 15
+}
+
+# Named sixteenth-note patterns spanning a wider LHL syncopation range
+# (0, 1, 2, 5, 11) than the archetype grid above.
+P16 = {
+    "four-on-floor": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],  # LHL 0
+    "late-eighth": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0],  # LHL 1
+    "early-sixteenth": [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],  # LHL 2
+    "son-3-3-3-3-2-2": [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0],  # LHL 5
+    "pre-beat-pickups": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],  # LHL 11
+}
+
 
 # The reduced pattern set used by the sweep experiments.
 SYNCOPATION_GRADIENT = (4, 5)
@@ -63,6 +98,11 @@ OFFBEAT_GRADIENT = (1, 2, 3, 4, 5)
 # separate input channel so syncopated accents are heard against a
 # steady beat, without changing the accent pattern's duty cycle.
 ONBEAT_BACKGROUND = (1, 0, 1, 0, 1, 0, 1, 0)
+
+# The same tactus sampled on a 16-step (sixteenth-note) grid: quarter-note
+# beats at positions 0, 4, 8, 12. This is the correct metrical background
+# when the foreground accent is a 16-step pattern.
+ONBEAT_BACKGROUND_16 = (1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 
 
 @dataclass(frozen=True)
@@ -133,6 +173,25 @@ def make_rhythm(
         rate_off=rate_off,
         jitter_ms=jitter_ms,
         name=PATTERN_NAMES[pattern_id],
+    )
+
+
+def make_rhythm_16(
+    pattern_id, step_duration=0.125, rate_on=40.0, rate_off=0.0, jitter_ms=0.0
+) -> Rhythm:
+    """Build a sixteenth-note Rhythm from a ``PATTERNS_16`` key.
+
+    ``step_duration`` defaults to 0.125 s (one sixteenth at 120 BPM) so a
+    16-step cycle spans the same two-second bar as the 8-step patterns at
+    their default 0.25 s step.
+    """
+    return Rhythm(
+        tuple(PATTERNS_16[pattern_id]),
+        step_duration=step_duration,
+        rate_on=rate_on,
+        rate_off=rate_off,
+        jitter_ms=jitter_ms,
+        name=PATTERN_NAMES_16[pattern_id],
     )
 
 
