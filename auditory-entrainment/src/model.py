@@ -94,7 +94,7 @@ def _normalization_factors(
 
 
 class Params:
-    """Parameters of the auditory entrainment model. """
+    """Parameters of the auditory entrainment model"""
 
     def __init__(
         self,
@@ -104,14 +104,15 @@ class Params:
         duration: float = 1000.0,
         dt: float = 0.1,
         seed: int = 42,
-        v_dt: float = 1.0, # Membrane-potential recording interval (ms)
+        v_dt: float = 1.0, # Membrane potential recording interval (ms)
         
         # Population Sizes
         n_exc: int = 400,
         n_inh: int = 100,
 
+        # Normalization Parameters
         synaptic_normalization: str = "sqrt", # none/sqrt/linear
-        n_exc_ref: int = 400, # Reference sizes; normalization is identity here
+        n_exc_ref: int = 400, 
         n_inh_ref: int = 100,
         n_thal_ref: int = 20,
 
@@ -130,10 +131,10 @@ class Params:
         # Synaptic Time Constants
         tau_e: float = 5.0, # Excitatory Conductance Decay
         tau_i: float = 10.0, # Inhibitory Conductance Decay
-        delay_ei: float = 1.0, # E-to-I
-        delay_ie: float = 1.0, # I-to-E
-        delay_ei_std: float = 0.0, # E-to-I across-neuron delay spread (ms)
-        delay_ie_std: float = 0.0, # I-to-E across-neuron delay spread (ms)
+        delay_ei: float = 1.0, # E-I delay
+        delay_ie: float = 1.0, # I-E delay 
+        delay_ei_std: float = 0.0, # E-I  delay spread (ms)
+        delay_ie_std: float = 0.0, # I-E  delay spread (ms)
 
         # Recurrent weights
         w_ee: float = 1.5, # Recurrent E-E Conductance Increment
@@ -158,12 +159,12 @@ class Params:
         p_thal: float = 0.5, # Connection Probability
 
         # Background Noise
-        bg_noise: float = 0.0, # Std (mV) of Gaussian white-noise voltage injection; 0 = off
+        bg_noise: float = 0.0, # standard deviation (mV) of Gaussian white noise 
 
         # Tonic Drive
-        I_bias: float = 100.0, # Mean tonic depolarizing current (pA)
+        I_bias: float = 100.0, # tonic depolarizing current (pA)
         I_bias_std: float = 0.0, # Across-neuron standard deviation (pA)
-        weight_lognormal_sigma: float = 0.0, # Shared per-neuron synaptic weight spread
+        weight_lognormal_sigma: float = 0.0, # per neuron synaptic weight spread
     ):
 
         # Simulation Parameters

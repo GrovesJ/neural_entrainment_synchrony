@@ -57,30 +57,33 @@ PATTERN_NAMES = {
     5: "offbeat",  # every off-beat eighth, onsets 1, 3, 5, 7
 }
 
-# Sixteenth-note versions of the same archetypes, sampled on a 16-step
-# grid (one step = one sixteenth note in a 4/4 bar). These are what the
-# metrical hierarchy in ``measures.syncopation.metrical_weights`` can resolve
-# to four levels of beat strength.
+# Sixteenth note patterns
 PATTERNS_16 = {
     1: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     2: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
     3: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
     4: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0],
     5: [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+    6: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0],
+    7: [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+    8: [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0],
+    9: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
 }
 
 PATTERN_NAMES_16 = {
-    1: "single-16",  # one downbeat per cycle
-    2: "onbeat-16",  # quarter-note pulse on the downbeats
+    1: "single-16",  # one downbeat
+    2: "four-on-floor",  # quarter notes pulse on each downbeats
     3: "eighths-16",  # straight eighth notes
-    4: "tresillo-16",  # 3-3-2 syncopation, onsets 0, 6, 12
-    5: "offbeat-16",  # every off-beat eighth, onsets 1, 3, ..., 15
+    4: "tresillo-16",  # 3-3-2 syncopation
+    5: "offbeat-16",  # every off beat eighth note
+    6: "late-eighth",
+    7: "early-sixteenth",
+    8: "son-3-3-3-3-2-2",
+    9: "pre-beat-pickups",
 }
 
-# Named sixteenth-note patterns spanning a wider LHL syncopation range
-# (0, 1, 2, 5, 11) than the archetype grid above.
+# Sixteenth note patterns 
 P16 = {
-    "four-on-floor": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],  # LHL 0
     "late-eighth": [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0],  # LHL 1
     "early-sixteenth": [1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],  # LHL 2
     "son-3-3-3-3-2-2": [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0],  # LHL 5
