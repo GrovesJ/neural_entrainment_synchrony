@@ -1,7 +1,8 @@
-"""Synchrony measures for auditory entrainment.
+"""
+Synchrony measures for auditory entrainment.
 
-The phase-locking value (PLV) quantifies how consistently the phase of
-a signal tracks a reference rhythm, in the range [0, 1].
+The phase phase locking value (PLV) measures how consistently the phase of
+a signal follows a rhythm, in the range [0, 1].
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ __all__ = ["hilbert", "instantaneous_phase", "plv", "plv_pair", "golomb_hansel",
 
 
 def hilbert(signal) -> np.ndarray:
-    """Analytic signal of a real 1-D signal via an FFT Hilbert transform."""
+    """Hilbert transform of a signal"""
     signal = np.asarray(signal, dtype=float)
     n = signal.size
     if n == 0:
@@ -29,7 +30,7 @@ def hilbert(signal) -> np.ndarray:
 
 
 def _bandpass(signal, fs: float, freq: float, bandwidth: float | None = None) -> np.ndarray:
-    """Real-valued signal band-passed around ``freq`` (FFT zero-phase filter)."""
+    """Band pass a signal around a target frequency with a rectangular window"""
     signal = np.asarray(signal, dtype=float)
     n = signal.size
     if n == 0:
@@ -44,23 +45,8 @@ def _bandpass(signal, fs: float, freq: float, bandwidth: float | None = None) ->
 
 
 def instantaneous_phase(signal, fs: float, freq: float, bandwidth: float | None = None) -> np.ndarray:
-    """Instantaneous phase (radians) of a signal band-passed around ``freq``.
-
-    Parameters
-    ----------
-    signal : array_like
-        Real-valued signal.
-    fs : float
-        Sampling rate in Hz.
-    freq : float
-        Centre frequency of the band in Hz.
-    bandwidth : float, optional
-        Width of the band-pass window in Hz (default ``freq``).
-
-    Returns
-    -------
-    ndarray
-        Phase in radians, same length as ``signal``.
+    """
+    Instantaneous phase in rads of a signal signal band passed around a certain frequency
     """
     signal = np.asarray(signal, dtype=float)
     if signal.size == 0:
@@ -69,12 +55,8 @@ def instantaneous_phase(signal, fs: float, freq: float, bandwidth: float | None 
 
 
 def plv(signal, fs: float, freq: float, t0: float = 0.0) -> float:
-    """Phase-locking value of ``signal`` to a fixed-frequency reference.
-
-    PLV = |<exp(i * (phi(t) - 2*pi*freq*(t0 + t)))>|, in [0, 1].
-    1 means the signal is perfectly phase-locked to the reference rhythm
-    at ``freq``; 0 means no locking. ``t0`` is the reference start time
-    in seconds (e.g. the first beat onset of the stimulus).
+    """
+    Phase locking value of a signal to a reference rhythm
     """
     signal = np.asarray(signal, dtype=float)
     if signal.size == 0:
@@ -96,33 +78,8 @@ def plv_pair(x, y, fs: float) -> float:
 
 
 def golomb_hansel(V, fs=None, freq=None, bandwidth=None) -> float:
-    """Golomb-Hansel synchrony measure chi of population membrane potentials.
-
-    chi = sigma2(mean_i V_i) / mean_i sigma2(V_i), where the mean is
-    across neurons at each time step and sigma2 is the temporal
-    variance. chi is in [0, 1]: 1 means every neuron shares the same
-    fluctuation (perfect synchrony), while chi ~= 1/N for N independent
-    neurons. The chance level is therefore the reciprocal of the number
-    of recorded neurons, not zero.
-
-    Parameters
-    ----------
-    V : array_like
-        Membrane potentials, shape ``(n_neurons, n_time)``. A single
-        1-D trace is treated as one neuron and returns NaN.
-    fs : float, optional
-        Sampling rate in Hz. If given together with ``freq``, each
-        trace is band-passed around ``freq`` first, so chi quantifies
-        synchrony within that frequency band only.
-    freq : float, optional
-        Centre frequency of the band in Hz.
-    bandwidth : float, optional
-        Width of the band-pass window in Hz (default ``freq``).
-
-    Returns
-    -------
-    float
-        chi in [0, 1], or NaN if it cannot be computed.
+    """
+    Golomb Hansel synchrony measure chi of population membrane potentials
     """
     V = np.asarray(V, dtype=float)
     if V.ndim == 1:
@@ -139,38 +96,13 @@ def golomb_hansel(V, fs=None, freq=None, bandwidth=None) -> float:
 
 
 def spike_pairwise_corr(spike_times, spike_indices, n_neurons, duration, bin_size=0.005) -> float:
-    """Mean pairwise Pearson correlation of binned spike trains.
+    """
+    Pairwise Pearson correlation of binned spike trains:
 
-    Each neuron's spikes are binned into ``bin_size``-second bins over
-    ``duration`` seconds, and the Pearson correlation between every pair
-    of neurons' spike-count vectors is averaged over all pairs (i < j).
-
-    The result is in [-1, 1]: 0 indicates independent firing, positive
-    values indicate spike synchrony. Neurons that never spike have zero
-    variance and are excluded.
-
-    Note: the raw correlation depends on the bin size and firing rate,
-    and independent neurons can give a small negative value. For a
-    chance level, shuffle or jitter spike times and recompute.
-
-    Parameters
-    ----------
-    spike_times : array_like
-        Spike times in seconds.
-    spike_indices : array_like of int
-        Neuron index of each spike, 0-based and < ``n_neurons``.
-    n_neurons : int
-        Number of neurons in the population.
-    duration : float
-        Recording window in seconds.
-    bin_size : float
-        Bin width in seconds (default 5 ms).
-
-    Returns
-    -------
-    float
-        Mean pairwise correlation in [-1, 1], or NaN if it cannot be
-        computed (fewer than two active neurons).
+    1. Each neuron's spikes are binned into "duration" seconds
+    2. Count spikes of each neuron in each bin
+    3. Compute Pearson corelation between every pairs spike count vectors
+    4. Sum each correllation and divide by number of pairs
     """
     spike_times = np.asarray(spike_times, dtype=float)
     spike_indices = np.asarray(spike_indices, dtype=np.int64)
@@ -197,17 +129,14 @@ def spike_pairwise_corr(spike_times, spike_indices, n_neurons, duration, bin_siz
 
 
 def vector_strength(spike_times, freq: float, t0: float = 0.0) -> float:
-    """Vector strength (circular resultant) of spike phases relative to a
-    fixed-frequency reference rhythm.
+    """
+    Vector strength of spike times to a reference rhythm:
 
-    VS = |<exp(i * 2*pi*freq*(t - t0))>| over spikes, in [0, 1]. 1 means
-    every spike lands at the same phase of the reference rhythm; 0 means
-    spikes are uniformly spread over the cycle. Unlike PLV computed on a
-    population rate trace, VS is computed on spike times and does not
-    increase with firing rate. The magnitude is independent of ``t0``
-    (a constant phase offset only rotates the circular mean).
+    1. Convert spike times to phases of the reference rhythm
+    2. Make a unit vector for each phase
+    3. Take the mean of those unit vectors
+    4. The length of the mean vector is the vector strength
 
-    Returns NaN if there are no spikes.
     """
     spike_times = np.asarray(spike_times, dtype=float)
     if spike_times.size == 0 or freq <= 0:
@@ -217,21 +146,22 @@ def vector_strength(spike_times, freq: float, t0: float = 0.0) -> float:
 
 
 def mean_vector_strength(spike_times, spike_indices, n_neurons, freq: float, t0: float = 0.0, min_spikes: int = 5) -> float:
-    """Mean vector strength across neurons, each neuron weighted equally.
+    """
+    Vector strength averaged over neurons instead of over all spikes.
 
-    Each neuron's vector strength is computed from its own spikes and the
-    results are averaged over neurons with at least ``min_spikes`` spikes.
-    Equal weighting keeps the score from being driven by high-rate
-    neurons, and ``min_spikes`` avoids the trivial VS = 1 of a neuron
-    with a single spike.
+    1. Remove spikes from neuron indices outside [0, n_neurons]
+    2. Give each spike a unit vector at its phase
+    3. Sum the vectors separately for each neuron (real and imaginary parts)
+    4. For each neuron with at least min_spikes spikes, VS = |sum| / count
+    5. Return the mean across those neurons
     """
     spike_times = np.asarray(spike_times, dtype=float)
     spike_indices = np.asarray(spike_indices, dtype=np.int64)
     if spike_times.size == 0 or spike_times.size != spike_indices.size or freq <= 0:
         return float("nan")
-    keep = (spike_indices >= 0) & (spike_indices < n_neurons)
-    spike_times = spike_times[keep]
-    spike_indices = spike_indices[keep]
+    valid = (spike_indices >= 0) & (spike_indices < n_neurons)
+    spike_times = spike_times[valid]
+    spike_indices = spike_indices[valid]
     if spike_indices.size == 0:
         return float("nan")
     z = np.exp(1j * 2.0 * np.pi * freq * (spike_times - t0))

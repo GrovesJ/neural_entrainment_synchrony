@@ -241,13 +241,7 @@ def plot_summary(rows: list[dict], outdir: Path, stem: str = "syncopation_demo",
 
 def plot_measures(rows: list[dict], outdir: Path, stem: str = "syncopation_demo",
                   subtitle: str = "") -> Path | None:
-    """Neural metrics against each syncopation measure.
-
-    One row per syncopation measure in "SYNCOPATION_MEASURES" and one column
-    per metric in "NEURAL_PANELS", so the same metric can be compared across
-    ordinations. Points are pattern means (seed SEM bars) labelled with their
-    LHL level; repeated x values are the patterns that tie on that measure.
-    """
+    """    Neural sycnchrony metrics vs each syncopation measure    """
     measures = [(key, label) for key, label in SYNCOPATION_MEASURES if key in rows[0]]
     if not measures:
         return None
