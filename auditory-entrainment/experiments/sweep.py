@@ -220,16 +220,16 @@ def run_rhythm_sweep_16(
     levels: tuple[int, ...] | None = None,
 ) -> list[dict]:
     """
-    Simulate the 16th note rhythms for 19 LHL levels with the medium entrainment regime
+    Simulate the 16th note rhythms under medium entrainment.
     """
     if levels is None:
-        levels = stimuli.LHL_LEVELS_16
+        levels = tuple(stimuli.PATTERNS_16)
     levels = tuple(levels)
     unknown = [level for level in levels if level not in stimuli.PATTERNS_16]
     if unknown:
         raise KeyError(
-            f"Unknown LHL level(s) {unknown}. "
-            f"Available: {list(stimuli.LHL_LEVELS_16)}"
+            f"Unknown pattern ID(s) {unknown}. "
+            f"Available: {list(stimuli.PATTERNS_16)}"
         )
 
     rows = []
@@ -582,7 +582,7 @@ def _run_rhythm_16(argv: list[str], filename: str = RHYTHM_16_CSV) -> None:
     levels = (
         tuple(int(level) for level in argv[5].split(",")) if len(argv) > 5 else None
     )
-    n_levels = len(levels) if levels is not None else len(stimuli.LHL_LEVELS_16)
+    n_levels = len(levels) if levels is not None else len(stimuli.PATTERNS_16)
     print(
         f"Sweeping {n_levels} sixteenth-note LHL rhythms over {duration_ms:.0f} ms "
         f"(medium entrainment, bg_noise={bg_noise} mV, {n_seeds} seeds, "

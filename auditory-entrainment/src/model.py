@@ -178,6 +178,7 @@ class Params:
         self.dt = dt
         self.seed = seed
         self.v_dt = v_dt
+        self.v_neurons = v_neurons
        
         # Population Sizes
         self.n_exc = n_exc

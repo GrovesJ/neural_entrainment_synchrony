@@ -37,7 +37,7 @@ FIGURES_DIR = _ROOT / "figures"
 
 
 DEFAULT_PATTERNS = (1,2,3,4,5)
-DEFAULT_PATTERNS_16 = stimuli.LHL_LEVELS_16
+DEFAULT_PATTERNS_16 = tuple(stimuli.PATTERNS_16)
 MEDIUM_STIMULUS = {
     "step_duration": 0.25,
     "rate_on": 40.0,
