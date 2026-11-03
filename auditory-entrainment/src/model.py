@@ -29,10 +29,15 @@ where:
 - I_bias is the bias current
 - noise is the noise term
 
-
+Algorithm for simulating the network:
+|1. Build a parameter object with the desired network parameters
+ 2. Set the seed
+ 3. Build the network with the parameters and rhythmic pattern
+ 4. Attach monitors to record spikes, rates, and membrane potentials
+ 5. Run the simulate for duration in ms
+ 6. Collect the results and return a result object 
 
 Recurring algorithm for each neuron:
-
 1. Each time step the membrane potential is updated according to the above equations
 2. If exceeds the threshold, a spike is emitted and the potential is reset to the reset potential
 3. The adaptation variable is incremented by delta_adapt and the neuron enters a refractory period
@@ -40,7 +45,7 @@ Recurring algorithm for each neuron:
 5. The thalamic input is modeled as a spike generator that delivers spikes to the excitatory neurons with a certain probability and weight
 
 
-Dynamical features:
+Dynamical behaviour:
 
 - The network exhibits gamma oscillations due to the interaction between excitatory and inhibitory neurons (PING mechanism)
 - The thalamic input can entrain the network to a rhythmic stimulus
@@ -105,14 +110,15 @@ class Params:
         dt: float = 0.1,
         seed: int = 42,
         v_dt: float = 1.0, # Membrane potential recording interval (ms)
+        v_neurons: int | None = 1000, 
         
         # Population Sizes
         n_exc: int = 400,
         n_inh: int = 100,
 
-        # Normalization Parameters
+        # Type and reference sizes for synaptic normalization
         synaptic_normalization: str = "sqrt", # none/sqrt/linear
-        n_exc_ref: int = 400, 
+        n_exc_ref: int = 400,
         n_inh_ref: int = 100,
         n_thal_ref: int = 20,
 
@@ -159,12 +165,12 @@ class Params:
         p_thal: float = 0.5, # Connection Probability
 
         # Background Noise
-        bg_noise: float = 0.0, # standard deviation (mV) of Gaussian white noise 
+        bg_noise: float = 0.0, # Std (mV) of noise voltage injection
 
         # Tonic Drive
-        I_bias: float = 100.0, # tonic depolarizing current (pA)
-        I_bias_std: float = 0.0, # Across-neuron standard deviation (pA)
-        weight_lognormal_sigma: float = 0.0, # per neuron synaptic weight spread
+        I_bias: float = 100.0, # Mean tonic depolarizing current (pA)
+        I_bias_std: float = 0.0, # Across neuron standard deviation (pA)
+        weight_lognormal_sigma: float = 0.0, # Shared per-neuron synaptic weight spread
     ):
 
         # Simulation Parameters
@@ -177,7 +183,7 @@ class Params:
         self.n_exc = n_exc
         self.n_inh = n_inh
 
-        # Synaptic normalization mode and reference sizes for the factors.
+        # Synaptic normalization mode and reference sizes for the factors
         self.synaptic_normalization = synaptic_normalization
         self.n_exc_ref = int(n_exc_ref)
         self.n_inh_ref = int(n_inh_ref)
@@ -200,10 +206,6 @@ class Params:
         self.tau_i = tau_i
         self.delay_ei = delay_ei
         self.delay_ie = delay_ie
-        if delay_ei < 0 or delay_ie < 0:
-            raise ValueError("Mean synaptic delays must be non-negative.")
-        if delay_ei_std < 0 or delay_ie_std < 0:
-            raise ValueError("Synaptic delay spreads must be non-negative.")
         self.delay_ei_std = delay_ei_std
         self.delay_ie_std = delay_ie_std
         
@@ -239,21 +241,17 @@ class Params:
         # Background Noise
         self.bg_noise = bg_noise
 
-        # Tonic Drive
+        # Bias noise and weight spread
         self.I_bias = I_bias
-        if I_bias_std < 0:
-            raise ValueError("I_bias_std must be non-negative.")
         self.I_bias_std = I_bias_std
-        if weight_lognormal_sigma < 0:
-            raise ValueError("weight_lognormal_sigma must be non-negative.")
         self.weight_lognormal_sigma = weight_lognormal_sigma
 
     def as_dict(self) -> dict:
-        """Return every parameter value keyed by name, in declared order."""
+        """Return every parameter value as a dictionary"""
         return {name: getattr(self, name) for name in _PARAM_FIELDS}
 
     def describe(self) -> str:
-        """Human-readable listing of every parameter, one per line."""
+        """Return a list of every parameter"""
         lines = ["Simulation parameters:"]
         lines.extend(f"  {name}: {value}" for name, value in self.as_dict().items())
         return "\n".join(lines)
@@ -264,7 +262,7 @@ class Params:
 
 
 _PARAM_FIELDS = (
-    "duration", "dt", "seed", "v_dt",
+    "duration", "dt", "seed", "v_dt", "v_neurons",
     "n_exc", "n_inh",
     "synaptic_normalization", "n_exc_ref", "n_inh_ref", "n_thal_ref",
     "C_m", "tau_exc", "tau_inh",
@@ -289,13 +287,21 @@ class Result:
     n_exc: int
     n_inh: int
     spike_times: _np.ndarray  # seconds; excitatory spikes first, then inhibitory
-    spike_indices: _np.ndarray  # global index, 0..n_exc-1 excitatory, n_exc.. inhibitory
+    spike_indices: _np.ndarray  # neuron spike indices
     rate_t: _np.ndarray  # seconds
     rate_exc: _np.ndarray  # Hz
     rate_inh: _np.ndarray  # Hz
     v_t: _np.ndarray  # seconds
-    v_exc: _np.ndarray  # mV, shape (n_exc, n_steps)
-    v_inh: _np.ndarray  # mV, shape (n_inh, n_steps)
+    v_exc: _np.ndarray  # mV, shape (n_recorded, n_steps)
+    v_inh: _np.ndarray  # mV, shape (n_recorded, n_steps)
+
+
+def _record_indices(n_neurons: int, n_record: int | None):
+    """Return evenly spaced neuron indices for a StateMonitor"""
+    if n_record is None:
+        return True
+    n_record = min(n_record, n_neurons)
+    return (_np.arange(n_record) * n_neurons) // n_record
 
 
 def simulate(
@@ -319,8 +325,16 @@ def simulate(
     inh_spikes = _b2.SpikeMonitor(inh)
     exc_rate = _b2.PopulationRateMonitor(exc)
     inh_rate = _b2.PopulationRateMonitor(inh)
-    exc_v = _b2.StateMonitor(exc, "v", record=True, dt=params.v_dt * _b2.ms)
-    inh_v = _b2.StateMonitor(inh, "v", record=True, dt=params.v_dt * _b2.ms)
+    exc_v = _b2.StateMonitor(
+        exc, "v",
+        record=_record_indices(params.n_exc, params.v_neurons),
+        dt=params.v_dt * _b2.ms,
+    )
+    inh_v = _b2.StateMonitor(
+        inh, "v",
+        record=_record_indices(params.n_inh, params.v_neurons),
+        dt=params.v_dt * _b2.ms,
+    )
 
     net = _b2.Network()
     net.add(*[c for c in components.values() if c is not None])
