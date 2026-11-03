@@ -55,9 +55,7 @@ def instantaneous_phase(signal, fs: float, freq: float, bandwidth: float | None 
 
 
 def plv(signal, fs: float, freq: float, t0: float = 0.0) -> float:
-    """
-    Phase locking value of a signal to a reference rhythm
-    """
+    """    Phase locking value of a signal to a reference rhythm"""
     signal = np.asarray(signal, dtype=float)
     if signal.size == 0:
         return float("nan")
@@ -78,9 +76,7 @@ def plv_pair(x, y, fs: float) -> float:
 
 
 def golomb_hansel(V, fs=None, freq=None, bandwidth=None) -> float:
-    """
-    Golomb Hansel synchrony measure chi of population membrane potentials
-    """
+    """Golomb Hansel synchrony measure chi of population membrane potentials"""
     V = np.asarray(V, dtype=float)
     if V.ndim == 1:
         V = V[None, :]
@@ -99,7 +95,7 @@ def spike_pairwise_corr(spike_times, spike_indices, n_neurons, duration, bin_siz
     """
     Pairwise Pearson correlation of binned spike trains:
 
-    1. Each neuron's spikes are binned into "duration" seconds
+    1. Each neurons spikes are binned into "duration" seconds
     2. Count spikes of each neuron in each bin
     3. Compute Pearson corelation between every pairs spike count vectors
     4. Sum each correllation and divide by number of pairs

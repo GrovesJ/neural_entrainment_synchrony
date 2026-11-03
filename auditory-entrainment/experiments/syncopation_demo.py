@@ -122,15 +122,21 @@ def simulate_gradient(
             )
     return rows
 
-def _pattern_order(rows: list[dict]) -> list[tuple[int, str, int]]:
+def _pattern_order(rows: list[dict], sort_key: str | None = None) -> list[tuple[int, str, int]]:
+    """Patterns in first-seen order, optionally sorted by a syncopation metric."""
     seen: dict[int, tuple[str, int]] = {}
     for r in rows:
         seen.setdefault(r["pattern"], (r["name"], r["lhl"]))
-    return [(pid, name, lhl) for pid, (name, lhl) in seen.items()]
+    order = [(pid, name, lhl) for pid, (name, lhl) in seen.items()]
+    if sort_key is not None:
+        values = {r["pattern"]: r[sort_key] for r in rows}
+        order.sort(key=lambda item: values[item[0]])
+    return order
 
 
-def _series(rows: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
-    order = [pid for pid, _, _ in _pattern_order(rows)]
+def _series(rows: list[dict], key: str, order=None) -> tuple[np.ndarray, np.ndarray]:
+    if order is None:
+        order = [pid for pid, _, _ in _pattern_order(rows)]
     means, sems = [], []
     for pid in order:
         vals = np.asarray([r[key] for r in rows if r["pattern"] == pid], dtype=float)
@@ -139,9 +145,10 @@ def _series(rows: list[dict], key: str) -> tuple[np.ndarray, np.ndarray]:
     return np.asarray(means), np.asarray(sems)
 
 
-def _pattern_value(rows: list[dict], key: str) -> np.ndarray:
+def _pattern_value(rows: list[dict], key: str, order=None) -> np.ndarray:
     """Per pattern value for each metric for each pattern, in order"""
-    order = [pid for pid, _, _ in _pattern_order(rows)]
+    if order is None:
+        order = [pid for pid, _, _ in _pattern_order(rows)]
     return np.asarray(
         [next(r[key] for r in rows if r["pattern"] == pid) for pid in order],
         dtype=float,
@@ -193,9 +200,10 @@ SYNCOPATION_MEASURES = [
 
 # Plotting and saving results
 def plot_summary(rows: list[dict], outdir: Path, stem: str = "syncopation_demo",
-                 subtitle: str = "") -> Path:
+                 subtitle: str = "", sort_key: str = "lhl") -> Path:
     outdir.mkdir(parents=True, exist_ok=True)
-    order = _pattern_order(rows)
+    order = _pattern_order(rows, sort_key=sort_key)
+    pids = [pid for pid, _, _ in order]
     x = np.arange(len(order))
     labels = [
         f"LHL={lhl}" if name == f"lhl{lhl}" else f"{name}\nLHL={lhl}"
@@ -209,8 +217,8 @@ def plot_summary(rows: list[dict], outdir: Path, stem: str = "syncopation_demo",
         1, len(panels), figsize=(panel_width * len(panels), 4.2), squeeze=True
     )
     for ax, (e_key, i_key, title, ymin) in zip(axes, panels):
-        e_mean, e_sem = _series(rows, e_key)
-        i_mean, i_sem = _series(rows, i_key)
+        e_mean, e_sem = _series(rows, e_key, order=pids)
+        i_mean, i_sem = _series(rows, i_key, order=pids)
         width = 0.35
         ax.bar(x - width / 2, e_mean, width, yerr=e_sem, capsize=3,
                color="tab:blue", label="excitatory")
@@ -343,6 +351,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--bg-noise", type=float, default=3.4)
     parser.add_argument("--no-background", action="store_true",
                         help="Remove background beat (control)")
+    parser.add_argument("--sort-by", default="lhl",
+                        choices=("lhl", "offbeat_count", "wnbd"),
+                        help="Syncopation metric to order the summary bars by")
     parser.add_argument("--csv", default="syncopation_demo.csv")
     parser.add_argument("--figures-dir", default=str(FIGURES_DIR))
     args = parser.parse_args(argv)
@@ -376,6 +387,7 @@ def main(argv: list[str] | None = None) -> None:
         Path(args.figures_dir),
         stem=Path(args.csv).stem,
         subtitle=context,
+        sort_key=args.sort_by,
     )
     print(f"Saved figure to {fig_path}")
     measures_path = plot_measures(
