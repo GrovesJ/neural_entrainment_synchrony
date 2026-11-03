@@ -3,15 +3,14 @@ Analysis and plotting tools for the entrainment sweep.
 
 - Loads "results/sweep.csv" 
 - computes several statistics for each synchrony metric across syncopation levels
+- makes plots of each metric vs syncopation 
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-
 import matplotlib
-
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,7 +32,7 @@ PRIMARY_METRICS = ["plv_exc_beat", "vs_exc_beat", "corr_exc", "rate_exc_hz"]
 
 
 def load_sweep(path: str | Path = RESULTS_CSV) -> pd.DataFrame:
-    """Read a sweep CSV into a DataFrame."""
+    """Read a sweep CSV into a DataFrame"""
     return pd.read_csv(path)
 
 
@@ -150,27 +149,6 @@ def figure_metric_panels(df, outdir, metrics=None, axes=None) -> list[Path]:
     return paths
 
 
-def figure_correlation_heatmap(df, outdir, method: str = "spearman") -> Path:
-    corr = correlation_table(df, method=method)
-    vals = corr.to_numpy(float)
-    fig, ax = plt.subplots(figsize=(1.4 * len(corr.columns) + 2, 0.42 * len(corr) + 2))
-    im = ax.imshow(vals, cmap="RdBu_r", vmin=-1, vmax=1, aspect="auto")
-    ax.set_xticks(range(len(corr.columns)), corr.columns, rotation=30, ha="right")
-    ax.set_yticks(range(len(corr.index)), corr.index)
-    for i in range(vals.shape[0]):
-        for j in range(vals.shape[1]):
-            if np.isfinite(vals[i, j]):
-                ax.text(j, i, f"{vals[i, j]:.2f}", ha="center", va="center",
-                        fontsize=7, color="white" if abs(vals[i, j]) > 0.6 else "black")
-    ax.set_title(f"{method.title()} correlation: metrics vs axes")
-    fig.colorbar(im, ax=ax, label="correlation")
-    fig.tight_layout()
-    p = Path(outdir) / "correlation_heatmap.png"
-    fig.savefig(p, dpi=150)
-    plt.close(fig)
-    return p
-
-
 def figure_offbeat_groups(df, outdir, metrics=None) -> Path:
     metrics = metrics or PRIMARY_METRICS
     metrics = [m for m in metrics if m in df.columns]
@@ -224,13 +202,11 @@ def main() -> None:
     print("\nFigures:")
     for p in figure_metric_panels(grad, outdir):
         print(" ", p)
-    print(" ", figure_correlation_heatmap(grad, outdir))
     print(" ", figure_offbeat_groups(grad, outdir))
 
 
 if __name__ == "__main__":
     main()
-
 
 
 
