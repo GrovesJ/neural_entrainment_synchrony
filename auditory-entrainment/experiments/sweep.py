@@ -27,7 +27,6 @@ _BEAT_FREQ = 2.0
 _METRIC_KEYS = (
     "plv_exc_bar", "plv_inh_bar", "plv_exc_beat", "plv_inh_beat",
     "vs_exc_bar", "vs_inh_bar", "vs_exc_beat", "vs_inh_beat",
-    "chi_exc", "chi_inh",
     "corr_exc", "corr_inh",
     "rate_exc_hz", "rate_inh_hz",
 )
@@ -52,8 +51,6 @@ def _score(result, freqs: dict[str, float] | None = None) -> dict:
         "vs_inh_bar": synchrony.mean_vector_strength(inh_times, inh_idx, result.n_inh, _BAR_FREQ),
         "vs_exc_beat": synchrony.mean_vector_strength(exc_times, exc_idx, result.n_exc, _BEAT_FREQ),
         "vs_inh_beat": synchrony.mean_vector_strength(inh_times, inh_idx, result.n_inh, _BEAT_FREQ),
-        "chi_exc": synchrony.golomb_hansel(result.v_exc),
-        "chi_inh": synchrony.golomb_hansel(result.v_inh),
         "corr_exc": synchrony.spike_pairwise_corr(exc_times, exc_idx, result.n_exc, duration),
         "corr_inh": synchrony.spike_pairwise_corr(inh_times, inh_idx, result.n_inh, duration),
         "rate_exc_hz": float(result.rate_exc.mean()),
@@ -155,7 +152,7 @@ def run_rhythm_sweep(
             f"plv_beat={row['plv_exc_beat']:.3f}/{row['plv_inh_beat']:.3f}  "
             f"vs_bar={row['vs_exc_bar']:.3f}/{row['vs_inh_bar']:.3f}  "
             f"vs_beat={row['vs_exc_beat']:.3f}/{row['vs_inh_beat']:.3f}  "
-            f"chi={row['chi_exc']:.3f}  corr={row['corr_exc']:.3f}  "
+            f"corr={row['corr_exc']:.3f}  "
             f"r_e={row['rate_exc_hz']:.2f} Hz"
         )
     return rows
@@ -283,7 +280,7 @@ def run_rhythm_sweep_16(
             f"f={row['freq']:.2f} Hz  "
             f"plv_bar={row['plv_exc_bar']:.3f}/{row['plv_inh_bar']:.3f}  "
             f"plv_beat={row['plv_exc_beat']:.3f}/{row['plv_inh_beat']:.3f}  "
-            f"chi={row['chi_exc']:.3f}  corr={row['corr_exc']:.3f}  "
+            f"corr={row['corr_exc']:.3f}  "
             f"r_e={row['rate_exc_hz']:.2f} Hz"
         )
     return rows

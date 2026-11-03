@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-__all__ = ["hilbert", "instantaneous_phase", "plv", "plv_pair", "golomb_hansel", "spike_pairwise_corr", "vector_strength", "mean_vector_strength"]
+__all__ = ["hilbert", "instantaneous_phase", "plv", "plv_pair", "spike_pairwise_corr", "vector_strength", "mean_vector_strength"]
 
 
 def hilbert(signal) -> np.ndarray:
@@ -73,22 +73,6 @@ def plv_pair(x, y, fs: float) -> float:
     phi_x = np.angle(hilbert(x))
     phi_y = np.angle(hilbert(y))
     return float(np.abs(np.mean(np.exp(1j * (phi_x - phi_y)))))
-
-
-def golomb_hansel(V, fs=None, freq=None, bandwidth=None) -> float:
-    """Golomb Hansel synchrony measure chi of population membrane potentials"""
-    V = np.asarray(V, dtype=float)
-    if V.ndim == 1:
-        V = V[None, :]
-    if V.ndim != 2 or V.shape[0] < 2 or V.shape[1] < 2:
-        return float("nan")
-    if fs is not None and freq is not None:
-        V = np.stack([_bandpass(v, fs, freq, bandwidth) for v in V])
-    var_pop = float(np.var(V.mean(axis=0)))
-    var_avg = float(np.mean(np.var(V, axis=1)))
-    if var_avg <= 0.0:
-        return float("nan")
-    return var_pop / var_avg
 
 
 def spike_pairwise_corr(spike_times, spike_indices, n_neurons, duration, bin_size=0.005) -> float:

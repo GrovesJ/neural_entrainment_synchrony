@@ -1,20 +1,8 @@
-"""Analysis and plotting tools for the entrainment sweep.
+"""
+Analysis and plotting tools for the entrainment sweep.
 
-Loads ``results/sweep.csv`` (written by ``experiments/sweep.py``) and
-provides:
-
-- descriptive statistics, overall and grouped by syncopation axis;
-- Pearson / Spearman correlations between the syncopation axes
-  (LHL, off-beat count, WNBD) and the synchrony metrics;
-- linear-trend statistics (slope, r, R^2, p) for each axis-metric pair;
-- figures saved under ``figures/``.
-
-The ``beat-alone`` baseline row (pattern 0) is reported separately and
-excluded from the gradient statistics.
-
-Usage::
-
-    python experiments/analysis.py [sweep.csv] [figures_dir]
+- Loads "results/sweep.csv" 
+- computes several statistics for each synchrony metric across syncopation levels
 """
 
 from __future__ import annotations
@@ -38,10 +26,10 @@ AXES = ["lhl", "offbeat_count", "wnbd"]
 METRICS = [
     "plv_exc_bar", "plv_inh_bar", "plv_exc_beat", "plv_inh_beat",
     "vs_exc_bar", "vs_inh_bar", "vs_exc_beat", "vs_inh_beat",
-    "chi_exc", "chi_inh", "corr_exc", "corr_inh",
+    "corr_exc", "corr_inh",
     "rate_exc_hz", "rate_inh_hz",
 ]
-PRIMARY_METRICS = ["plv_exc_beat", "vs_exc_beat", "corr_exc", "chi_exc", "rate_exc_hz"]
+PRIMARY_METRICS = ["plv_exc_beat", "vs_exc_beat", "corr_exc", "rate_exc_hz"]
 
 
 def load_sweep(path: str | Path = RESULTS_CSV) -> pd.DataFrame:
@@ -50,12 +38,12 @@ def load_sweep(path: str | Path = RESULTS_CSV) -> pd.DataFrame:
 
 
 def gradient(df: pd.DataFrame) -> pd.DataFrame:
-    """The accent-gradient rows (drop the beat-alone baseline, pattern 0)."""
+    """The accent gradient rows"""
     return df[df["pattern"] != 0].copy()
 
 
 def baseline(df: pd.DataFrame) -> pd.DataFrame:
-    """The beat-alone baseline row(s)."""
+    """The simple beat baseline"""
     return df[df["pattern"] == 0].copy()
 
 
@@ -67,14 +55,14 @@ def describe(df: pd.DataFrame, metrics=None) -> pd.DataFrame:
 
 
 def group_means(df: pd.DataFrame, axis: str, metrics=None) -> pd.DataFrame:
-    """Mean of each metric grouped by a syncopation axis."""
+    """Mean of each metric grouped by a syncopation axis"""
     metrics = metrics or METRICS
     cols = [m for m in metrics if m in df.columns]
     return df.groupby(axis)[cols].mean()
 
 
 def _corr(x: np.ndarray, y: np.ndarray, method: str) -> float:
-    """Pearson or Spearman correlation coefficient of two 1-D arrays."""
+    """Pearson or Spearman correlation coefficient of two 1D arrays"""
     if method == "pearson":
         return float(np.corrcoef(x, y)[0, 1])
     rx, ry = stats.rankdata(x), stats.rankdata(y)
@@ -82,13 +70,13 @@ def _corr(x: np.ndarray, y: np.ndarray, method: str) -> float:
 
 
 def _linfit(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float, float]:
-    """Least-squares fit y = slope*x + intercept; returns (slope, intercept, r, p)."""
+    """Least square fit"""
     slope, intercept, r, p, _se = stats.linregress(x, y)
     return float(slope), float(intercept), float(r), float(p)  # type: ignore
 
 
 def correlation_table(df: pd.DataFrame, method: str = "spearman") -> pd.DataFrame:
-    """Correlation of each metric (rows) with each syncopation axis (cols)."""
+    """Correlation of each metric row with each syncopation axis"""
     rows = []
     for m in METRICS:
         if m not in df.columns:
@@ -104,7 +92,7 @@ def correlation_table(df: pd.DataFrame, method: str = "spearman") -> pd.DataFram
 
 
 def trend_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Linear regression of each metric on each axis: slope, r, R^2, p, n."""
+    """Linear regression of each metric on each axis"""
     rows = []
     for m in METRICS:
         if m not in df.columns:
@@ -125,7 +113,6 @@ def trend_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_metric_vs_axis(df, metric: str, axis: str, ax=None, annotate: bool = True):
-    """Scatter of ``metric`` against ``axis`` with a fitted line."""
     ax = ax if ax is not None else plt.gca()
     x = df[axis].to_numpy(float)
     y = df[metric].to_numpy(float)
@@ -144,7 +131,6 @@ def plot_metric_vs_axis(df, metric: str, axis: str, ax=None, annotate: bool = Tr
 
 
 def figure_metric_panels(df, outdir, metrics=None, axes=None) -> list[Path]:
-    """One figure per metric, with a panel per syncopation axis."""
     metrics = metrics or PRIMARY_METRICS
     axes = axes or AXES
     outdir = Path(outdir)
@@ -165,7 +151,6 @@ def figure_metric_panels(df, outdir, metrics=None, axes=None) -> list[Path]:
 
 
 def figure_correlation_heatmap(df, outdir, method: str = "spearman") -> Path:
-    """Heatmap of metric-vs-axis correlations."""
     corr = correlation_table(df, method=method)
     vals = corr.to_numpy(float)
     fig, ax = plt.subplots(figsize=(1.4 * len(corr.columns) + 2, 0.42 * len(corr) + 2))
@@ -187,7 +172,6 @@ def figure_correlation_heatmap(df, outdir, method: str = "spearman") -> Path:
 
 
 def figure_offbeat_groups(df, outdir, metrics=None) -> Path:
-    """Bar plot of each metric grouped by off-beat count (mean +/- SEM)."""
     metrics = metrics or PRIMARY_METRICS
     metrics = [m for m in metrics if m in df.columns]
     fig, axs = plt.subplots(1, len(metrics), figsize=(3.0 * len(metrics), 3.2), squeeze=False)
@@ -246,7 +230,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
 
 
 
