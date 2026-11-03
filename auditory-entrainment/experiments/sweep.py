@@ -200,11 +200,9 @@ MEDIUM_16_STEP_DURATION = 0.125  # one sixteenth note at 120 BPM
 
 
 def _thal_count(pset: dict) -> int:
-    """Thalamic population size, mirroring the notebook's size-invariant rule.
-
-    With synaptic normalization on, the thalamic population scales with
-    ``n_exc`` so the feedforward:recurrent ratio stays size-invariant;
-    with normalization off, the base reference size is used unchanged.
+    """
+    With normalization on, the thalamic population scales with "n_exc" so the feedforward:recurrent ratio stays size invariant
+    with normalization off, the reference size (n_thal_ref) is used 
     """
     if pset["synaptic_normalization"] != "none":
         return max(1, round(pset["n_thal_ref"] * pset["n_exc"] / pset["n_exc_ref"]))
@@ -219,8 +217,21 @@ def run_rhythm_sweep_16(
     base_seed: int = 42,
     background: bool = True,
     beat_rate_on: float = 40.0,
+    levels: tuple[int, ...] | None = None,
 ) -> list[dict]:
-    """Simulate each 16-step ``P16`` rhythm under medium entrainment."""
+    """
+    Simulate the 16th note rhythms for 19 LHL levels with the medium entrainment regime
+    """
+    if levels is None:
+        levels = stimuli.LHL_LEVELS_16
+    levels = tuple(levels)
+    unknown = [level for level in levels if level not in stimuli.PATTERNS_16]
+    if unknown:
+        raise KeyError(
+            f"Unknown LHL level(s) {unknown}. "
+            f"Available: {list(stimuli.LHL_LEVELS_16)}"
+        )
+
     rows = []
     beat = (
         stimuli.Rhythm(
@@ -232,7 +243,9 @@ def run_rhythm_sweep_16(
         if background
         else None
     )
-    for name, pattern in stimuli.P16.items():
+    for level in levels:
+        pattern = stimuli.PATTERNS_16[level]
+        name = stimuli.PATTERN_NAMES_16[level]
         accent = stimuli.Rhythm(
             tuple(pattern),
             step_duration=MEDIUM_16_STEP_DURATION,
@@ -255,7 +268,7 @@ def run_rhythm_sweep_16(
             for key, value in _score(result).items():
                 scores[key].append(value)
         row = {
-            "pattern": name,
+            "pattern": level,
             "name": name,
             "lhl": syncopation.lhl(pattern),
             "offbeat_count": syncopation.offbeat_count(pattern),
@@ -279,7 +292,6 @@ def run_rhythm_sweep_16(
 # --------------------------------------------------------------------
 # Parameter sweeps: stimulus weight x noise, and accent timing jitter
 
-
 # Log spaced grids of  two axes that define the phase diagram.
 PHASE_STIM_W = (0.02, 0.05, 0.1, 0.2, 0.4)
 PHASE_NOISE = (0.0, 1.0, 2.0, 4.0, 8.0, 16.0)
@@ -302,14 +314,12 @@ PHASE_METER_PATTERN = tuple(stimuli.ONBEAT_BACKGROUND)
 PHASE_ACCENT_RATE_ON = 40.0
 PHASE_METER_RATE_ON = 20.0
 
-# Everything the parameter sweeps hold fixed. ``stim_w`` sets ``w_thal``
-# for the accent channel and ``noise`` sets ``bg_noise``; the meter is
-# delivered through the model's separate background channel.
-#
-# Every parameter accepted by ``model.Params`` is listed here explicitly
-# except ``w_thal`` and ``bg_noise`` (the two sweep axes, set per cell in
-# ``_phase_params``). No ``Params`` class defaults are relied on
-# implicitly, so the values used to produce ``PHASE_CSV`` are fully
+# Everything the parameter sweeps hold fixed. "stim_w" sets "w_thal"
+# for the accent channel and "noise" sets "bg_noise"
+# Every parameter accepted by "model.Params" is listed here explicitly
+# except "w_thal" and "bg_noise" (the two sweep axes, set per cell in
+# "_phase_params"). No "Params" class defaults are relied on
+# implicitly, so the values used to produce "PHASE_CSV" are fully
 # visible and reproducible.
 PHASE_REFERENCE = dict(
     # Simulation
@@ -369,7 +379,7 @@ def parameter_rhythms(
 def _parameter_frequencies(
     accent: stimuli.Rhythm, meter: stimuli.Rhythm
 ) -> tuple[float, float]:
-    """Return ``(accent_hz, meter_hz)`` derived from the actual patterns."""
+    """Return (accent_hz, meter_hz) derived from the actual patterns."""
     accent_hz = 1.0 / (
         stimuli.pattern_period(accent.pattern) * accent.step_duration
     )
@@ -384,7 +394,7 @@ def stimulus_rhythm(
     step_duration: float = PHASE_STEP_DURATION,
     rate_on: float = PHASE_ACCENT_RATE_ON,
 ) -> stimuli.Rhythm:
-    """Backward-compatible helper returning the parameter-sweep accent."""
+    """Backward compatible helper returning the parameter sweep accent."""
     accent, _meter = parameter_rhythms(jitter_ms, step_duration, rate_on)
     return accent
 
@@ -395,7 +405,7 @@ def _phase_params(
     reference: dict | None = None,
     duration_ms: float | None = None,
 ) -> model.Params:
-    """Fixed reference parameters with the two sweep axes set."""
+    """Fixed reference parameters with the two sweep axes set"""
     values = dict(PHASE_REFERENCE if reference is None else reference)
     if duration_ms is not None:
         values["duration"] = duration_ms
@@ -413,7 +423,7 @@ def run_phase_diagram(
     duration_ms: float | None = None,
     reference: dict | None = None,
 ) -> list[dict]:
-    """Simulate the stimulus-weight and noise grid."""
+    """Simulate the stimulus weight and noise grid"""
     stim_w_values = tuple(stim_w_values)
     noise_values = tuple(noise_values)
     accent, meter = parameter_rhythms(
@@ -459,7 +469,7 @@ def run_jitter_sweep(
     duration_ms: float | None = None,
     reference: dict | None = None,
 ) -> list[dict]:
-    """Sweep accent jitter at each operating point."""
+    """Sweep accent jitter at each point of stimulus weight and noise"""
     points = tuple((float(w), float(n)) for w, n in points)
     jitter_values = tuple(jitter_values)
     rows = []
@@ -509,7 +519,7 @@ def run_parameter_sweep(
     duration_ms: float | None = None,
     reference: dict | None = None,
 ) -> dict[str, list[dict]]:
-    """Run the phase diagram and jitter parameter sweeps."""
+    """Run the phase diagram and jitter parameter sweeps"""
     return {
         "phase": run_phase_diagram(
             stim_w_values=stim_w_values,
@@ -563,19 +573,24 @@ def _run_rhythm(argv: list[str], filename: str = RHYTHM_CSV) -> None:
 
 
 def _run_rhythm_16(argv: list[str], filename: str = RHYTHM_16_CSV) -> None:
+    """Run the sixteenth note sweep over LHL levels"""
     duration_ms = float(argv[0]) if len(argv) > 0 else 20000.0
     bg_noise = float(argv[1]) if len(argv) > 1 else 3.4
     n_seeds = int(argv[2]) if len(argv) > 2 else 3
     background = bool(int(argv[3])) if len(argv) > 3 else True
     beat_rate_on = float(argv[4]) if len(argv) > 4 else 40.0
+    levels = (
+        tuple(int(level) for level in argv[5].split(",")) if len(argv) > 5 else None
+    )
+    n_levels = len(levels) if levels is not None else len(stimuli.LHL_LEVELS_16)
     print(
-        f"Sweeping {len(stimuli.P16)} sixteenth-note rhythms over {duration_ms:.0f} ms "
+        f"Sweeping {n_levels} sixteenth-note LHL rhythms over {duration_ms:.0f} ms "
         f"(medium entrainment, bg_noise={bg_noise} mV, {n_seeds} seeds, "
         f"background={background}, beat_rate_on={beat_rate_on} Hz) each..."
     )
     rows = run_rhythm_sweep_16(
         duration_ms=duration_ms, bg_noise=bg_noise, n_seeds=n_seeds,
-        background=background, beat_rate_on=beat_rate_on,
+        background=background, beat_rate_on=beat_rate_on, levels=levels,
     )
     path = _save_csv(rows, filename)
     print(f"\nSaved results to {path}")
