@@ -191,50 +191,67 @@ NEURAL_PANELS = [
     ("rate_exc_hz", "rate_inh_hz", "Firing rate (Hz)", None),
 ]
 
-# Syncopation measures carried in each row, as (column, axis label).
+# Syncopation measures
 SYNCOPATION_MEASURES = [
-    ("wnbd", "WNBD (normalised note-to-beat distance)"),
+    ("lhl", "LHL"),
     ("offbeat_count", "Offbeat count"),
+    ("wnbd", "WNBD (weighted note to beat distance)"),
+]
+
+
+# Rows of the  bar chart
+SUMMARY_AXES = [
+    ("lhl", "LHL"),
+    ("offbeat_count", "Offbeat count"),
+    ("wnbd", "WNBD"),
 ]
 
 
 # Plotting and saving results
 def plot_summary(rows: list[dict], outdir: Path, stem: str = "syncopation_demo",
-                 subtitle: str = "", sort_key: str = "lhl") -> Path:
+                 subtitle: str = "") -> Path:
     outdir.mkdir(parents=True, exist_ok=True)
-    order = _pattern_order(rows, sort_key=sort_key)
-    pids = [pid for pid, _, _ in order]
-    x = np.arange(len(order))
-    labels = [
-        f"LHL={lhl}" if name == f"lhl{lhl}" else f"{name}\nLHL={lhl}"
-        for _, name, lhl in order
-    ]
-    n_seeds = len(rows) // len(order)
-    panel_width = max(4.6, 0.34 * len(order))
+    axes_spec = [(key, label) for key, label in SUMMARY_AXES if key in rows[0]]
+    n_patterns = len({r["pattern"] for r in rows})
+    n_seeds = len(rows) // n_patterns
+    panel_width = max(4.6, 0.34 * n_patterns)
 
-    panels = NEURAL_PANELS
     fig, axes = plt.subplots(
-        1, len(panels), figsize=(panel_width * len(panels), 4.2), squeeze=True
+        len(axes_spec), len(NEURAL_PANELS),
+        figsize=(panel_width * len(NEURAL_PANELS), 4.2 * len(axes_spec)),
+        squeeze=False,
     )
-    for ax, (e_key, i_key, title, ymin) in zip(axes, panels):
-        e_mean, e_sem = _series(rows, e_key, order=pids)
-        i_mean, i_sem = _series(rows, i_key, order=pids)
-        width = 0.35
-        ax.bar(x - width / 2, e_mean, width, yerr=e_sem, capsize=3,
-               color="tab:blue", label="excitatory")
-        ax.bar(x + width / 2, i_mean, width, yerr=i_sem, capsize=3,
-               color="tab:red", label="inhibitory")
-        ax.set_xticks(x)
-        ax.set_xticklabels(
-            labels,
-            rotation=90 if len(order) > 8 else 0,
-            fontsize=8 if len(order) > 8 else None,
-        )
-        ax.set_title(title)
-        if ymin is not None:
-            ax.set_ylim(ymin, 1.0)
-        ax.grid(axis="y", alpha=0.3)
-    axes[0].legend()
+    for row_i, (axis_key, axis_label) in enumerate(axes_spec):
+        # Sort the bars by this row's measure so its gradient reads left to right.
+        order = _pattern_order(rows, sort_key=axis_key)
+        pids = [pid for pid, _, _ in order]
+        values = _pattern_value(rows, axis_key, order=pids)
+        x = np.arange(len(order))
+        labels = [
+            f"{name}\n{axis_label}={value:g}"
+            for (_, name, _), value in zip(order, values)
+        ]
+        for col_i, (e_key, i_key, title, ymin) in enumerate(NEURAL_PANELS):
+            ax = axes[row_i, col_i]
+            e_mean, e_sem = _series(rows, e_key, order=pids)
+            i_mean, i_sem = _series(rows, i_key, order=pids)
+            width = 0.35
+            ax.bar(x - width / 2, e_mean, width, yerr=e_sem, capsize=3,
+                   color="tab:blue", label="excitatory")
+            ax.bar(x + width / 2, i_mean, width, yerr=i_sem, capsize=3,
+                   color="tab:red", label="inhibitory")
+            ax.set_xticks(x)
+            ax.set_xticklabels(
+                labels,
+                rotation=90 if len(order) > 8 else 0,
+                fontsize=8 if len(order) > 8 else None,
+            )
+            ax.set_title(title)
+            if ymin is not None:
+                ax.set_ylim(ymin, 1.0)
+            ax.grid(axis="y", alpha=0.3)
+        axes[row_i, 0].set_ylabel(f"ordered by {axis_label}")
+    axes[0, 0].legend()
     fig.suptitle(
         f"Syncopation gradient (mean \u00b1 SEM, {n_seeds} seeds)"
         + (f"\n{subtitle}" if subtitle else ""),
@@ -351,9 +368,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--bg-noise", type=float, default=3.4)
     parser.add_argument("--no-background", action="store_true",
                         help="Remove background beat (control)")
-    parser.add_argument("--sort-by", default="lhl",
-                        choices=("lhl", "offbeat_count", "wnbd"),
-                        help="Syncopation metric to order the summary bars by")
     parser.add_argument("--csv", default="syncopation_demo.csv")
     parser.add_argument("--figures-dir", default=str(FIGURES_DIR))
     args = parser.parse_args(argv)
@@ -387,7 +401,6 @@ def main(argv: list[str] | None = None) -> None:
         Path(args.figures_dir),
         stem=Path(args.csv).stem,
         subtitle=context,
-        sort_key=args.sort_by,
     )
     print(f"Saved figure to {fig_path}")
     measures_path = plot_measures(
