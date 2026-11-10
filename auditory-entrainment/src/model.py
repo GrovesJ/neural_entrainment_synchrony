@@ -3,9 +3,9 @@ Brian2 model of neural entrainment
 
 Excitatory/inhibitory conductance based leaky integrate and fire (LIF) neural network with:
 
-- spike frequency adaptation in the inhibitory neurons
-- PING style gamma oscillations, 
-- rhythmic thalamic drive
+- spike frequency adaptation in excitatory neurons
+- PING style gamma oscillations
+- custom rhythmic thalamic drive
 
 The membrane potential of each neuron is governed by the following equations:
 
@@ -54,10 +54,8 @@ Dynamical behaviour:
 """
 
 from dataclasses import dataclass as _dataclass
-
 import brian2 as _b2 # type: ignore
 import numpy as _np # type: ignore
-
 from . import stimuli as _stimuli
 
 __all__ = ["Params", "Result", "simulate"]
@@ -118,9 +116,9 @@ class Params:
 
         # Type and reference sizes for synaptic normalization
         synaptic_normalization: str = "sqrt", # none/sqrt/linear
-        n_exc_ref: int = 400,
-        n_inh_ref: int = 100,
-        n_thal_ref: int = 20,
+        n_exc_ref: int = _N_EXC_REF,
+        n_inh_ref: int = _N_INH_REF,
+        n_thal_ref: int = _N_THAL_REF,
 
         # Network Dynamics
         C_m: float = 200.0, # Membrane Capacitance
@@ -155,9 +153,9 @@ class Params:
         p_ii: float = 0.5, # I-I connection
         
         # Spike Frequency Adaption
-        tau_adapt: float = 150.0, # adaption decay constant
-        w_adapt: float = 100.0, # adaptaiton current amplitude
-        delta_adapt: float = 0.1, # incremept to adaptation per spike
+        tau_adapt: float = 150.0, # controls how quickly the adaption variable decays 
+        w_adapt: float = 100.0, # adaptively scales the current 
+        delta_adapt: float = 0.1, # increment to the adaptation variable after each spike
         
         # Rhythmic Thalamic Input
         n_thal: int = 20, # Number of Thalamic Input Channels
@@ -247,8 +245,11 @@ class Params:
         self.I_bias_std = I_bias_std
         self.weight_lognormal_sigma = weight_lognormal_sigma
 
+
+
+
     def as_dict(self) -> dict:
-        """Return every parameter value as a dictionary"""
+        """Return a dictionary with every parameter"""
         return {name: getattr(self, name) for name in _PARAM_FIELDS}
 
     def describe(self) -> str:
@@ -287,16 +288,18 @@ class Result:
     stimulus: _stimuli.Rhythm | None
     n_exc: int
     n_inh: int
-    spike_times: _np.ndarray  # seconds; excitatory spikes first, then inhibitory
+    spike_times: _np.ndarray  # timestamp array in seconds; excitatory spikes first, then inhibitory
     spike_indices: _np.ndarray  # neuron spike indices
-    rate_t: _np.ndarray  # seconds
+    rate_t: _np.ndarray  # timestamp array in seconds
     rate_exc: _np.ndarray  # Hz
     rate_inh: _np.ndarray  # Hz
-    v_t: _np.ndarray  # seconds
-    v_exc: _np.ndarray  # mV, shape (n_recorded, n_steps)
-    v_inh: _np.ndarray  # mV, shape (n_recorded, n_steps)
+    v_t: _np.ndarray  # timestamp array in seconds
+    v_exc: _np.ndarray  # voltage of n_recorded excitatory neurons in mV
+    v_inh: _np.ndarray  # voltage of n_recorded inhibitory neurons in mV
 
 
+
+# Helpers for the simulate function
 def _record_indices(n_neurons: int, n_record: int | None):
     """Return evenly spaced neuron indices for a StateMonitor"""
     if n_record is None:
@@ -305,58 +308,19 @@ def _record_indices(n_neurons: int, n_record: int | None):
     return (_np.arange(n_record) * n_neurons) // n_record
 
 
-def simulate(
-    params: Params | None = None,
-    stimulus: _stimuli.Rhythm | None = None,
-    background: _stimuli.Rhythm | None = None,
-) -> Result:
-    """Build the network, run it, and return the recorded activity """
-    if params is None:
-        params = Params()
-
-
-    _b2.seed(params.seed)
-    _b2.defaultclock.dt = params.dt * _b2.ms
-
-    components = _build_network(params, stimulus, background)
-    exc = components["exc"]
-    inh = components["inh"]
-
-    exc_spikes = _b2.SpikeMonitor(exc)
-    inh_spikes = _b2.SpikeMonitor(inh)
-    exc_rate = _b2.PopulationRateMonitor(exc)
-    inh_rate = _b2.PopulationRateMonitor(inh)
-    exc_v = _b2.StateMonitor(
-        exc, "v",
-        record=_record_indices(params.n_exc, params.v_neurons),
-        dt=params.v_dt * _b2.ms,
-    )
-    inh_v = _b2.StateMonitor(
-        inh, "v",
-        record=_record_indices(params.n_inh, params.v_neurons),
-        dt=params.v_dt * _b2.ms,
-    )
-
-    net = _b2.Network()
-    net.add(*[c for c in components.values() if c is not None])
-    net.add(exc_spikes, inh_spikes, exc_rate, inh_rate, exc_v, inh_v)
-    net.run(params.duration * _b2.ms, report=None)
-
-    return _collect_result(
-        params, stimulus, exc_spikes, inh_spikes, exc_rate, inh_rate, exc_v, inh_v
-    )
-
 def _build_network(
     params: Params,
     stimulus: _stimuli.Rhythm | None = None,
     background: _stimuli.Rhythm | None = None,
 ):
+    # Define units for Brian2
     ms = _b2.ms
     mV = _b2.mV
     pF = _b2.pF
     nS = _b2.nS
     pA = _b2.pA
 
+    # Convert parameters to Brian2 units
     C_m = params.C_m * pF
     tau_e = params.tau_e * ms
     tau_i = params.tau_i * ms
@@ -372,9 +336,11 @@ def _build_network(
     sigma_noise = params.bg_noise * mV
     noise_e = sigma_noise * (2 / (params.tau_exc * ms)) ** 0.5
     noise_i = sigma_noise * (2 / (params.tau_inh * ms)) ** 0.5
+    
     factors = params.normalization_factors
     bias_rng = _np.random.default_rng(params.seed)
     weight_rng = _np.random.default_rng(params.seed + 1)
+    
     exc_bias = _np.clip(
         bias_rng.normal(params.I_bias, params.I_bias_std, params.n_exc),
         0.0,
@@ -566,4 +532,46 @@ def _collect_result(params, stimulus, exc_spikes, inh_spikes, exc_rate, inh_rate
         v_t=_np.asarray(exc_v.t / _b2.second),
         v_exc=_np.asarray(exc_v.v / _b2.mV),
         v_inh=_np.asarray(inh_v.v / _b2.mV),
+    )
+
+
+def simulate(
+    params: Params | None = None,
+    stimulus: _stimuli.Rhythm | None = None,
+    background: _stimuli.Rhythm | None = None,
+) -> Result:
+    """Build the network, run it, and return the recorded activity """
+    if params is None:
+        params = Params()
+
+
+    _b2.seed(params.seed)
+    _b2.defaultclock.dt = params.dt * _b2.ms
+
+    components = _build_network(params, stimulus, background)
+    exc = components["exc"]
+    inh = components["inh"]
+
+    exc_spikes = _b2.SpikeMonitor(exc)
+    inh_spikes = _b2.SpikeMonitor(inh)
+    exc_rate = _b2.PopulationRateMonitor(exc)
+    inh_rate = _b2.PopulationRateMonitor(inh)
+    exc_v = _b2.StateMonitor(
+        exc, "v",
+        record=_record_indices(params.n_exc, params.v_neurons),
+        dt=params.v_dt * _b2.ms,
+    )
+    inh_v = _b2.StateMonitor(
+        inh, "v",
+        record=_record_indices(params.n_inh, params.v_neurons),
+        dt=params.v_dt * _b2.ms,
+    )
+
+    net = _b2.Network()
+    net.add(*[c for c in components.values() if c is not None])
+    net.add(exc_spikes, inh_spikes, exc_rate, inh_rate, exc_v, inh_v)
+    net.run(params.duration * _b2.ms, report=None)
+
+    return _collect_result(
+        params, stimulus, exc_spikes, inh_spikes, exc_rate, inh_rate, exc_v, inh_v
     )

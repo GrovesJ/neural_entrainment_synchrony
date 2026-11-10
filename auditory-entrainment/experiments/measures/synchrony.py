@@ -45,9 +45,7 @@ def _bandpass(signal, fs: float, freq: float, bandwidth: float | None = None) ->
 
 
 def instantaneous_phase(signal, fs: float, freq: float, bandwidth: float | None = None) -> np.ndarray:
-    """
-    Instantaneous phase in rads of a signal signal band passed around a certain frequency
-    """
+    """Instantaneous phase in rads of a signal signal band passed around a certain frequency"""
     signal = np.asarray(signal, dtype=float)
     if signal.size == 0:
         return np.empty(0)
@@ -55,7 +53,7 @@ def instantaneous_phase(signal, fs: float, freq: float, bandwidth: float | None 
 
 
 def plv(signal, fs: float, freq: float, t0: float = 0.0) -> float:
-    """    Phase locking value of a signal to a reference rhythm"""
+    """Phase locking value of a signal to a reference rhythm"""
     signal = np.asarray(signal, dtype=float)
     if signal.size == 0:
         return float("nan")
