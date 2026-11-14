@@ -11,8 +11,13 @@ Run the same sequence without the continuous on-beat background:
 
     python experiments/persistence.py --patterns 1 3 4 --no-background
 
-The public ``run_persistence`` function accepts arbitrary pattern IDs,
-per-section durations, gaps, and parameter sets for reuse from notebooks.
+Run three sections for each generated LHL level 1, 3, and 7:
+
+    python experiments/persistence.py --lhl-levels 1 3 7 --repeats 3
+
+The public ``run_persistence`` function accepts built-in pattern IDs or
+``stimuli.Rhythm`` objects, per-section durations, gaps, and parameter sets
+for reuse from notebooks.
 """
 
 from __future__ import annotations
@@ -39,7 +44,12 @@ for _path in (_ROOT, _SRC):
 
 from src import model, stimuli
 from experiments.measures import synchrony
-from experiments.sweep import MEDIUM_ENTRAINMENT_PARAMS, _thal_count
+from experiments.sweep import (
+    MEDIUM_ENTRAINMENT_PARAMS,
+    _thal_count,
+    _build_meter,
+    combined_fundamental_hz,
+)
 
 RESULTS_DIR = _ROOT / "results"
 FIGURES_DIR = _ROOT / "figures"
@@ -50,7 +60,7 @@ DEFAULT_RATE_ON = 40.0
 DEFAULT_JITTER_MS = 1.0
 DEFAULT_BG_NOISE = 3.4
 DEFAULT_GAP_SECONDS = None
-DEFAULT_REFERENCE_FREQUENCY = 2.0
+PatternInput = int | stimuli.Rhythm | None
 
 
 @dataclass(frozen=True)
@@ -126,31 +136,39 @@ def make_rhythm(
 
 def make_background(
     *,
+    meter: str = "beat",
     step_duration: float = DEFAULT_STEP_DURATION,
     rate_on: float = DEFAULT_RATE_ON,
 ) -> stimuli.Rhythm:
-    """Build the continuous on-beat background drive."""
-    return stimuli.Rhythm(
-        tuple(stimuli.ONBEAT_BACKGROUND_16),
-        step_duration=step_duration,
-        rate_on=rate_on,
-        rate_off=0.0,
-        name="onbeat background",
+    """Build the continuous metrical background drive.
+
+    ``meter`` selects the metrical context: ``beat`` (default on-beat pulse),
+    ``downbeat``, ``beats13``, or ``accent`` (a metrically weighted drive on all
+    16 steps, which requires ``rate_on > 56 Hz``).
+    """
+    return _build_meter(meter, step_duration, rate_on)
+
+
+def schedule_background(
+    schedule: ScheduledRhythm,
+    *,
+    meter: str = "beat",
+    step_duration: float = DEFAULT_STEP_DURATION,
+    rate_on: float = DEFAULT_RATE_ON,
+) -> ScheduledRhythm:
+    """Keep the metrical background active throughout the schedule."""
+    background = make_background(
+        meter=meter, step_duration=step_duration, rate_on=rate_on
     )
-
-
-def schedule_background(schedule: ScheduledRhythm) -> ScheduledRhythm:
-    """Keep the on-beat background active only during stimulus sections."""
-    background = make_background()
     sections = tuple(
-        (start, stop, background if rhythm is not None else None)
-        for start, stop, rhythm in schedule.sections
+        (start, stop, background)
+        for start, stop, _ in schedule.sections
     )
-    return ScheduledRhythm(sections, name="scheduled on-beat background")
+    return ScheduledRhythm(sections, name=f"scheduled {meter} background")
 
 
 def build_schedule(
-    patterns: Sequence[int | None],
+    patterns: Sequence[PatternInput],
     *,
     durations: float | Sequence[float] | None = None,
     gaps: float | Sequence[float] | None = DEFAULT_GAP_SECONDS,
@@ -210,10 +228,16 @@ def build_schedule(
         })
         current = gap_stop
 
-    for index, (pattern_id, section_duration) in enumerate(
+    for index, (pattern_input, section_duration) in enumerate(
         zip(pattern_ids, section_durations)
     ):
-        if pattern_id is not None:
+        if isinstance(pattern_input, stimuli.Rhythm):
+            rhythm = pattern_input
+            pattern_id = rhythm.name
+            label = rhythm.name
+            phase_kind = "stimulus"
+        elif pattern_input is not None:
+            pattern_id = pattern_input
             rhythm = make_rhythm(
                 pattern_id,
                 step_duration=step_duration,
@@ -224,6 +248,7 @@ def build_schedule(
             label = stimuli.PATTERN_NAMES_16[pattern_id]
             phase_kind = "stimulus"
         else:
+            pattern_id = None
             rhythm = None
             label = "silence"
             phase_kind = "silence"
@@ -309,7 +334,7 @@ def _phase_metrics(
     inh_indices = indices[~exc_mask] - result.n_exc
     duration = stop - start
 
-    if frequency <= 0:
+    if not np.isfinite(frequency) or frequency <= 0:
         plv_exc = plv_inh = vs_exc = vs_inh = float("nan")
     else:
         plv_exc = synchrony.plv(
@@ -343,12 +368,12 @@ def _phase_rows(
     result: model.Result,
     metadata: Sequence[dict],
     *,
-    reference_frequency: float,
     background: bool,
     seed: int,
 ) -> list[dict]:
     rows = []
     for phase_index, section in enumerate(metadata):
+        frequency = section.get("frequency_hz", float("nan"))
         row = dict(section)
         row.update({
             "phase": phase_index,
@@ -367,9 +392,9 @@ def _phase_rows(
             result,
             section["start_s"],
             section["stop_s"],
-            reference_frequency,
+            frequency,
         ))
-        row["reference_frequency_hz"] = reference_frequency
+        row["reference_frequency_hz"] = frequency
         rows.append(row)
     return rows
 
@@ -379,6 +404,9 @@ def _simulate(
     *,
     parameter_set: Mapping[str, float],
     background: bool,
+    meter: str,
+    meter_rate_on: float,
+    step_duration: float,
     duration_s: float,
     dt: float,
     bg_noise: float,
@@ -393,17 +421,28 @@ def _simulate(
         "bg_noise": bg_noise,
     })
     params = model.Params(**parameter_values)
-    background_rhythm = schedule_background(schedule) if background else None
+    background_rhythm = (
+        schedule_background(
+            schedule,
+            meter=meter,
+            step_duration=step_duration,
+            rate_on=meter_rate_on,
+        )
+        if background
+        else None
+    )
     return model.simulate(params, stimulus=schedule, background=background_rhythm)
 
 
 def run_persistence(
-    patterns: Sequence[int | None],
+    patterns: Sequence[PatternInput],
     *,
     parameter_set: Mapping[str, float] = MEDIUM_ENTRAINMENT,
     durations: float | Sequence[float] | None = None,
     gaps: float | Sequence[float] | None = DEFAULT_GAP_SECONDS,
     background: bool = True,
+    meter: str = "beat",
+    meter_rate_on: float | None = None,
     step_duration: float = DEFAULT_STEP_DURATION,
     rate_on: float = DEFAULT_RATE_ON,
     rate_off: float = 0.0,
@@ -411,11 +450,32 @@ def run_persistence(
     dt: float = 0.1,
     bg_noise: float = DEFAULT_BG_NOISE,
     seed: int = 42,
-    reference_frequency: float = DEFAULT_REFERENCE_FREQUENCY,
     save: bool = True,
     label: str = "persistence",
 ) -> tuple[model.Result, list[dict]]:
-    """Run one continuous experiment and return per-section metrics."""
+    """Run one continuous experiment and return per-section metrics.
+
+    ``meter`` selects the background meter (``beat``, ``downbeat``,
+    ``beats13``, ``accent``). When ``meter == "accent"`` and no explicit
+    ``meter_rate_on`` is given, the stimulus and meter both move to the accent's
+    recommended rate so the comparison stays drive-matched.
+
+    Phase metrics are scored against the fundamental frequency of the stimulus
+    actually presented in each section (foreground rhythm plus the metrical
+    meter), matching the frequency-aware scoring in sweep/syncopation_demo.
+    """
+    if background and meter == "accent" and meter_rate_on is None:
+        if not stimuli.accent_is_representable(rate_on, step_duration):
+            chosen = stimuli.METRICAL_ACCENT_DEFAULT_RATE_ON
+            print(
+                f"  accent meter: selected {chosen:g} Hz for stimulus and meter "
+                "(drive-matched, best realised hierarchy)"
+            )
+            rate_on = chosen
+            meter_rate_on = chosen
+    if meter_rate_on is None:
+        meter_rate_on = rate_on
+
     schedule, metadata = build_schedule(
         patterns,
         durations=durations,
@@ -425,11 +485,31 @@ def run_persistence(
         rate_off=rate_off,
         jitter_ms=jitter_ms,
     )
+
+    # Score each section against the frequency of the stimulus actually
+    # presented in that section (foreground rhythm plus the metrical meter),
+    # mirroring the frequency-aware scoring in sweep/syncopation_demo.
+    meter_rhythm = (
+        make_background(
+            meter=meter, step_duration=step_duration, rate_on=meter_rate_on
+        )
+        if background
+        else None
+    )
+    for section, (_, _, rhythm) in zip(metadata, schedule.sections):
+        if rhythm is None:
+            section["frequency_hz"] = float("nan")
+        else:
+            section["frequency_hz"] = combined_fundamental_hz(rhythm, meter_rhythm)
+
     duration_s = metadata[-1]["stop_s"]
     result = _simulate(
         schedule,
         parameter_set=parameter_set,
         background=background,
+        meter=meter,
+        meter_rate_on=meter_rate_on,
+        step_duration=step_duration,
         duration_s=duration_s,
         dt=dt,
         bg_noise=bg_noise,
@@ -438,10 +518,12 @@ def run_persistence(
     rows = _phase_rows(
         result,
         metadata,
-        reference_frequency=reference_frequency,
         background=background,
         seed=seed,
     )
+    for row in rows:
+        row["meter"] = meter if background else "none"
+        row["meter_rate_on_hz"] = meter_rate_on if background else 0.0
     if save:
         RESULTS_DIR.mkdir(exist_ok=True)
         FIGURES_DIR.mkdir(exist_ok=True)
@@ -449,20 +531,20 @@ def run_persistence(
         plot_result(
             result, schedule, metadata, label, FIGURES_DIR / f"{label}.png",
             background=background,
-            reference_frequency=reference_frequency,
+            meter=meter,
+            meter_rate_on=meter_rate_on,
+            step_duration=step_duration,
         )
         plot_section_metrics(
             rows,
             label,
             FIGURES_DIR / f"{label}_metrics.png",
-            reference_frequency=reference_frequency,
         )
         plot_section_diagnostics(
             result,
             metadata,
             label,
             FIGURES_DIR / f"{label}_sections.png",
-            reference_frequency=reference_frequency,
         )
     return result, rows
 
@@ -567,7 +649,9 @@ def plot_result(
     label: str = "persistence",
     path: Path | None = None,
     background: bool = False,
-    reference_frequency: float = DEFAULT_REFERENCE_FREQUENCY,
+    meter: str = "beat",
+    meter_rate_on: float = DEFAULT_RATE_ON,
+    step_duration: float = DEFAULT_STEP_DURATION,
 ) -> None:
     """Save continuous input and population-rate diagnostics."""
     fig = plt.figure(figsize=(14, 14))
@@ -578,7 +662,12 @@ def plot_result(
     drive = np.zeros_like(t_rate)
     background_drive = np.zeros_like(t_rate)
     if background:
-        background_rhythm = schedule_background(schedule)
+        background_rhythm = schedule_background(
+            schedule,
+            meter=meter,
+            step_duration=step_duration,
+            rate_on=meter_rate_on,
+        )
         for start, stop, rhythm in background_rhythm.sections:
             if rhythm is not None:
                 mask = (t_rate >= start) & (t_rate < stop)
@@ -652,7 +741,6 @@ def plot_section_diagnostics(
     metadata: Sequence[dict],
     label: str = "persistence",
     path: Path | None = None,
-    reference_frequency: float = DEFAULT_REFERENCE_FREQUENCY,
 ) -> None:
     """Plot a phase histogram and E-I correlogram for each stimulus section."""
     stimulus_rows = [row for row in metadata if row["kind"] == "stimulus"]
@@ -675,9 +763,9 @@ def plot_section_diagnostics(
         in_section = (result.spike_times >= start) & (result.spike_times < stop)
         exc = in_section & (result.spike_indices < result.n_exc)
         inh = in_section & (result.spike_indices >= result.n_exc)
-        frequency = row.get("frequency_hz", reference_frequency)
+        frequency = row.get("frequency_hz", float("nan"))
         if not np.isfinite(frequency) or frequency <= 0:
-            frequency = reference_frequency
+            frequency = float("nan")
         exc_phase = (
             2.0 * np.pi * frequency * (result.spike_times[exc] - start)
         ) % (2 * np.pi)
@@ -751,7 +839,6 @@ def plot_section_metrics(
     rows: Sequence[dict],
     label: str = "persistence",
     path: Path | None = None,
-    reference_frequency: float = DEFAULT_REFERENCE_FREQUENCY,
 ) -> None:
     """Plot PLV, VS, and XCorr separately for each stimulus section."""
     stimulus_rows = [row for row in rows if row["kind"] == "stimulus"]
@@ -767,11 +854,7 @@ def plot_section_metrics(
         sharey=True,
     )
     metric_names = ("plv", "vs", "xcorr")
-    metric_labels = (
-        f"PLV ({reference_frequency:g} Hz)",
-        f"VS ({reference_frequency:g} Hz)",
-        "XCorr",
-    )
+    metric_labels = ("PLV", "VS", "XCorr")
     x = np.arange(len(metric_names))
     width = 0.36
     all_values = [
@@ -806,9 +889,13 @@ def plot_section_metrics(
             color="tab:red",
             label="inhibitory",
         )
+        frequency = row.get("reference_frequency_hz", float("nan"))
+        freq_txt = (
+            f"{frequency:.2f} Hz" if np.isfinite(frequency) else "no reference"
+        )
         section_label = (
             f"Section {row['section']}: {row['name']} "
-            f"({row['start_s']:.2f}-{row['stop_s']:.2f} s)"
+            f"({row['start_s']:.2f}-{row['stop_s']:.2f} s; {freq_txt})"
         )
         axis.set_title(section_label, loc="left")
         axis.set_ylabel("value")
@@ -819,7 +906,7 @@ def plot_section_metrics(
     axes[-1, 0].set_xlabel("section metrics")
     fig.suptitle(
         f"{label}: metrics by stimulus section "
-        f"(phase metrics referenced to {reference_frequency:g} Hz)"
+        "(phase metrics referenced to each section's stimulus frequency)"
     )
     fig.tight_layout()
     if path is not None:
@@ -829,12 +916,33 @@ def plot_section_metrics(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--patterns", nargs="+", type=int, required=True)
+    pattern_group = parser.add_mutually_exclusive_group(required=True)
+    pattern_group.add_argument("--patterns", nargs="+", type=int,
+                               help="Built-in sixteenth-note pattern IDs.")
+    pattern_group.add_argument(
+        "--lhl-levels",
+        nargs="+",
+        type=int,
+        metavar="LEVEL",
+        help="Generated full-period LHL levels; each is repeated --repeats times.",
+    )
+    parser.add_argument("--repeats", type=int, default=3,
+                        help="Sections per generated LHL level (default: 3).")
     parser.add_argument("--duration", type=float, default=None,
                         help="Stimulus duration in seconds; defaults to 8 seconds.")
     parser.add_argument("--gap", type=float, default=None,
                         help="Gap in seconds; defaults to each section duration.")
     parser.add_argument("--no-background", action="store_true")
+    parser.add_argument("--meter", choices=("beat", "downbeat", "beats13", "accent"),
+                        default="beat",
+                        help="Background meter used throughout the schedule "
+                             "(default: beat).")
+    parser.add_argument("--meter-rate-on", type=float, default=None,
+                        help="Onset rate for the background meter; defaults to "
+                             "the stimulus rate. The accent meter needs > 56 Hz.")
+    parser.add_argument("--rate-on", type=float, default=DEFAULT_RATE_ON,
+                        help="Onset rate for foreground rhythms "
+                             "(default: 40 Hz).")
     parser.add_argument("--noise", type=float, default=DEFAULT_BG_NOISE)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--label", default="persistence")
@@ -843,11 +951,34 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    if args.repeats < 1:
+        raise SystemExit("--repeats must be at least 1")
+    if args.lhl_levels is not None:
+        from experiments.rhythm_generator import lhl_gradient, pattern_string_to_tuple
+
+        generated = lhl_gradient(levels=args.lhl_levels)
+        patterns = [
+            stimuli.Rhythm(
+                pattern_string_to_tuple(str(row["pattern"])),
+                step_duration=DEFAULT_STEP_DURATION,
+                rate_on=args.rate_on,
+                rate_off=0.0,
+                jitter_ms=DEFAULT_JITTER_MS,
+                name=f"lhl-{int(row['lhl'])}",
+            )
+            for row in generated
+            for _ in range(args.repeats)
+        ]
+    else:
+        patterns = args.patterns
     run_persistence(
-        args.patterns,
+        patterns,
         durations=args.duration,
         gaps=args.gap,
         background=not args.no_background,
+        meter=args.meter,
+        rate_on=args.rate_on,
+        meter_rate_on=args.meter_rate_on,
         bg_noise=args.noise,
         seed=args.seed,
         label=args.label,

@@ -27,6 +27,7 @@ import argparse
 import csv
 from itertools import combinations
 from pathlib import Path
+from typing import Sequence
 import sys
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -130,6 +131,43 @@ def representative_rows(
         options.sort(key=lambda row: (float(row["wnbd"]), str(row["pattern"])))
         representatives.extend(options[:n_per_level])
     return representatives
+
+
+def lhl_gradient(
+    *,
+    n_onsets: int = 4,
+    require_downbeat: bool = True,
+    n_per_level: int = 1,
+    levels: Sequence[int] | None = None,
+) -> list[dict[str, object]]:
+    """Return a fixed-density, full-period LHL gradient.
+
+    One representative per available LHL level (optionally restricted to
+    ``levels``), each with four onsets, a 16-step shortest period, and a
+    monotone LHL ordering. This is the controlled syncopation ladder that the
+    built-in ``PATTERNS_16`` do not provide.
+    """
+    rows = generate_patterns(
+        n_onsets,
+        n_steps=16,
+        require_downbeat=require_downbeat,
+        period=16,
+    )
+    representatives = representative_rows(rows, n_per_level)
+    if levels is not None:
+        wanted = set(levels)
+        representatives = [r for r in representatives if int(r["lhl"]) in wanted]
+        missing = wanted - {int(r["lhl"]) for r in representatives}
+        if missing:
+            raise ValueError(
+                f"no representative found for LHL level(s) {sorted(missing)}"
+            )
+    return representatives
+
+
+def pattern_string_to_tuple(pattern: str) -> tuple[int, ...]:
+    """Convert a generator ``pattern`` string to an onset tuple."""
+    return tuple(int(char) for char in pattern)
 
 
 def _write_csv(rows: list[dict[str, object]], path: Path) -> None:
